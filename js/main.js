@@ -28,7 +28,7 @@ import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
   extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
   migrateManagement, preseasonTasks, readyForRace, signTitle, signPartner, dropPartner, hire, chooseConcept, startSeason, devFactor, staffCostPerRace,
-  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
+  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, resolveSponsorEvent, migrateEvents, SPONSOR_EVENTS, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
 } from './team/management.js';
 import {
   PACE, PACE_ORDER, ERS, ERS_ORDER, STRATEGISTS, playerCars, setPace, setErs, callBox, cancelBox, tooLateForBox, tyreLife, adviceFor,
@@ -41,7 +41,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 12;
+export const VERSION = 13;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -147,6 +147,7 @@ renderFeedFilter();
 
 // Log: Funk nur vom eigenen Team (eigene Fahrer bzw. eigener Kommandostand)
 function ownRadio(e) {
+  if (race.isSession && e.type === 'overtake') return false;   // Training/Qualifying: keine Überholmanöver im Log
   if (e.type !== 'radio') return true;
   if ((e.cars || []).some(id => race.carById[id] && race.carById[id].player)) return true;
   const t = TEAM_BY_ID[race.playerTeam];
@@ -415,6 +416,7 @@ function showHQ(notes = null) {
   migrateManagement(season, TEAMS);
   migrateBuildings(season);
   migrateCalendar(season, SEASON_2026);
+  migrateEvents(season);
   if (notes) hqNotes = notes;
   if (hqTab === 'report') hqTab = 'home';
   if (hqTab === 'career') hqTab = 'board';
@@ -475,7 +477,7 @@ function renderHQ() {
         <div class="pw-hqbtns"><button class="go" data-nego="title" data-idx="${i}">Verhandeln</button></div></div>`).join('');
     }
     h += `<div class="pw-label">PARTNER (${m.sponsors.length}/3) – Grundbetrag pro Rennen + Prämie fürs Ziel</div>`;
-    h += m.sponsors.length ? m.sponsors.map((s, i) => `<div class="pw-mcard"><b>${esc(s.name)}</b><small>${s.fee ? `${money(s.fee)} pro Rennen · ` : ''}Prämie ${money(s.reward)}: ${goalText(s.goal)} · erreicht ${s.hits}×${s.last === undefined ? '' : s.last ? ' · zuletzt ✓' : ' · zuletzt ✗'}</small>
+    h += m.sponsors.length ? m.sponsors.map((s, i) => `<div class="pw-mcard"><b>${esc(s.name)}</b><small>${s.fee ? `${money(s.fee)} pro Rennen · ` : ''}Prämie ${money(s.reward)}: ${goalText(s.goal)} · Zufriedenheit ${s.happy ?? 70} · erreicht ${s.hits}×${s.last === undefined ? '' : s.last ? ' · zuletzt ✓' : ' · zuletzt ✗'}</small>
       <div class="pw-hqbtns"><button data-drop="${i}">Vertrag beenden</button></div></div>`).join('') : '<div class="pw-hint">Noch keine Partner.</div>';
     if (m.sponsors.length < 3) {
       h += '<div class="pw-label">ANGEBOTE</div>' + (m.market.partners || []).map((o, i) => `<div class="pw-mcard"><b>${esc(o.name)}</b><small>${money(o.fee)} pro Rennen · Prämie ${money(o.reward)}: ${goalText(o.goal)}</small>
@@ -561,12 +563,12 @@ function renderHQ() {
   else if (savedGame && savedGame.mode === 'season') { go.textContent = 'Wochenende fortsetzen'; go.disabled = false; }
   else {
     const nx = nextEvent(season, SEASON_2026, trackLabel);
-    go.innerHTML = nx ? `Weiter · ${fmtDate(nx.date)} · ${nx.kind === 'race' ? `${esc(nx.text)}` : nx.kind === 'dev' ? 'Upgrade fertig' : 'Bau fertig'}` : 'Weiter';
+    go.innerHTML = nx ? `Weiter · ${fmtDate(nx.date)} · ${nx.kind === 'race' ? `${esc(nx.text)}` : nx.kind === 'dev' ? 'Upgrade fertig' : nx.kind === 'sponsor' ? 'Sponsor-Termin' : 'Bau fertig'}` : 'Weiter';
     go.disabled = !nx;
   }
 }
 const trackLabel = id => TRACKS[id].grandPrix.replace('Großer Preis ', 'GP ');
-const calIcon = e => ({ race: '🏁', dev: '🔧', build: '🏗', done: '✓' }[e.kind] || '•');
+const calIcon = e => ({ race: '🏁', dev: '🔧', build: '🏗', done: '✓', sponsor: '🤝' }[e.kind] || '•');
 
 // Sponsoren-Verhandlung
 function negoHtml(n) {
@@ -591,14 +593,24 @@ function negoHtml(n) {
 
 // Eigenes Bestätigungsfenster (statt Browser-Dialog)
 function pwConfirm(title, text, okLabel = 'OK') {
+  return pwChoose(title, text, [{ key: false, label: 'Abbrechen', secondary: true }, { key: true, label: okLabel }]);
+}
+// Auswahl mit mehreren Knöpfen: options [{ key, label, sub?, secondary? }] → Promise mit dem gewählten key
+function pwChoose(title, text, options) {
   return new Promise(resolve => {
-    $('pwDlgTitle').textContent = title;
+    $('pwDlgTitle').innerHTML = title;
     $('pwDlgText').innerHTML = text;
-    $('pwDlgOk').textContent = okLabel;
+    const box = $('pwDlgBtns');
+    box.className = `pw-dlg-btns n${options.length}`;
+    box.innerHTML = options.map((o, i) => `<button data-i="${i}" class="${o.secondary ? 'secondary-btn' : 'primary-btn'}">${o.label}${o.sub ? `<small>${o.sub}</small>` : ''}</button>`).join('');
     $('pwDialog').classList.remove('hidden');
-    const done = v => { $('pwDialog').classList.add('hidden'); $('pwDlgOk').onclick = null; $('pwDlgCancel').onclick = null; resolve(v); };
-    $('pwDlgOk').onclick = () => done(true);
-    $('pwDlgCancel').onclick = () => done(false);
+    box.onclick = e => {
+      const b = e.target.closest('[data-i]');
+      if (!b) return;
+      box.onclick = null;
+      $('pwDialog').classList.add('hidden');
+      resolve(options[Number(b.dataset.i)].key);
+    };
   });
 }
 
@@ -626,7 +638,7 @@ $('hqClose').addEventListener('click', () => {
   renderStart();
 });
 // Weiter zum nächsten Termin im Kalender: Rennen → Wochenende starten, sonst Fertigstellung übernehmen
-$('hqGo').addEventListener('click', () => {
+$('hqGo').addEventListener('click', async () => {
   const m = season.mgmt;
   if (savedGame && savedGame.mode === 'season') { $('hqScreen').classList.add('hidden'); resumeGame(); return; }
   const nx = nextEvent(season, SEASON_2026, trackLabel);
@@ -642,6 +654,17 @@ $('hqGo').addEventListener('click', () => {
     return;
   }
   hqNotes = advanceTo(season, nx.date);
+  if (nx.kind === 'sponsor') {
+    // Sponsor-Termin: welcher Fahrer geht hin – oder absagen?
+    const ev = m.events.find(e => e.id === nx.id);
+    const t = SPONSOR_EVENTS[ev.type];
+    const opts = t.driver
+      ? Object.keys(m.drivers).map(id => ({ key: id, label: `${id} schicken`, sub: `Stimmung ${m.drivers[id].morale}` }))
+      : [{ key: 'go', label: 'Gäste empfangen' }];
+    const choice = await pwChoose(`🤝 ${t.name} · ${esc(ev.sponsor)}`, `${t.hint}. ${t.driver ? 'Ein Fahrer muss hin – das kostet ihn etwas Stimmung.' : ''} Absagen verärgert den Sponsor.`,
+      [...opts, { key: 'decline', label: 'Absagen', secondary: true }]);
+    hqNotes.push(resolveSponsorEvent(season, ev.id, choice));
+  }
   saveSeason(season);
   hqTab = 'home';
   renderHQ();
@@ -1519,9 +1542,10 @@ function renderSessionWall() {
       go.disabled = out || !set || blocked || car.retired;
       go.className = 'pw-boxbtn pw-go';
     } else {
-      go.textContent = car.prog.phase === 'cool' ? 'KOMMT REIN' : 'REINHOLEN';
-      go.disabled = car.prog.phase === 'cool';
-      go.className = 'pw-boxbtn pw-go called';
+      const undo = car.prog.phase === 'cool' && car.boxInPrev && !car.inPit && !race.segFlag;
+      go.textContent = undo ? 'REINHOLEN ABBRECHEN' : car.prog.phase === 'cool' ? 'KOMMT REIN' : 'REINHOLEN';
+      go.disabled = car.prog.phase === 'cool' && !undo;
+      go.className = `pw-boxbtn pw-go ${undo ? 'undo' : 'called'}`;
     }
     // Hinweis
     let hint = '';
@@ -1575,6 +1599,8 @@ function sessionClick(e, b) {
     if (car.inGarage) {
       const ok = race.playerRun(car, { compound: cfg.c, push: cfg.push, fuel: cfg.fuel === 'high' ? 0.7 : race.kind === 'fp' ? 0.15 : 0.05, set: runSet(car) });
       if (ok) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Raus geht’s – ${cfg.push} schnelle Runde${cfg.push > 1 ? 'n' : ''} auf ${COMPOUNDS[cfg.c].name}.“`, { cars: [car.id], own: true });
+    } else if (car.prog.phase === 'cool' && car.boxInPrev) {
+      if (race.playerCancelBoxIn(car)) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Sorry, bleib draußen – weiter wie geplant.“`, { cars: [car.id], own: true });
     } else if (race.playerBoxIn(car)) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Box, box – komm rein.“`, { cars: [car.id], own: true });
   }
   renderSessionWall();

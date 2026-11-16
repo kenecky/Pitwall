@@ -182,7 +182,17 @@ export class Session extends Race {
   // Auto reinholen (nach der laufenden Runde in die Box)
   playerBoxIn(car) {
     if (car.inGarage || !car.prog || car.prog.phase === 'cool') return false;
+    car.boxInPrev = { phase: car.prog.phase, pushLeft: car.prog.pushLeft };
     car.prog.phase = 'cool';
+    return true;
+  }
+  // Reinholen zurücknehmen (verklickt) – solange das Auto noch nicht in der Boxengasse ist
+  playerCancelBoxIn(car) {
+    const p = car.boxInPrev;
+    if (!p || car.inGarage || car.inPit || this.segFlag) return false;
+    car.prog.phase = p.phase;
+    car.prog.pushLeft = p.pushLeft;
+    car.boxInPrev = null;
     return true;
   }
   // Auto-Programm des Ingenieurs für den Rest des Abschnitts
@@ -190,6 +200,37 @@ export class Session extends Race {
     car.autoRuns = on;
     if (on && car.elimSeg === null) car.prog.runs.splice(car.prog.runIdx, Infinity, ...this.planRuns(car, this.segment, this.clock).map(x => ({ ...x, depart: Math.max(x.depart, this.clock) })));
     else car.prog.runs.splice(car.prog.runIdx, Infinity);
+  }
+
+  // Pit Wall: drei Zeitsektoren (je ein Drittel der Runde). Auf schnellen Runden wird jeder Sektor bewertet:
+  // 'p' violett = absolute Bestzeit, 'g' grün = persönliche Bestzeit, 'y' gelb = keine Verbesserung.
+  sectorCheck() {
+    const L = this.track.L;
+    if (!this.bestSec) this.bestSec = [Infinity, Infinity, Infinity];
+    for (const c of this.cars) {
+      if (c.retired || c.inGarage) { c.secIdx = null; c.curSecs = []; c.lastSecs = null; continue; }
+      const idx = Math.min(2, Math.floor((((c.d % L) + L) % L) / (L / 3)));
+      if (c.secIdx === null || c.secIdx === undefined) { c.secIdx = idx; c.secStart = this.time; c.curSecs = []; c.secPush = false; continue; }
+      if (idx === c.secIdx) continue;
+      const done = c.secIdx;
+      const t = this.time - c.secStart;
+      c.secStart = this.time;
+      c.secIdx = idx;
+      if (c.secPush && c.curSecs.length === done) {
+        if (!c.pbSec) c.pbSec = [Infinity, Infinity, Infinity];
+        let st = 'y';
+        if (t < this.bestSec[done]) { st = 'p'; this.bestSec[done] = t; }
+        else if (t < c.pbSec[done]) st = 'g';
+        if (t < c.pbSec[done]) c.pbSec[done] = t;
+        c.curSecs.push(st);
+      }
+      if (idx === 0) {
+        // neue Runde: fertige schnelle Runde bis Ende Sektor 1 weiter anzeigen
+        if (c.curSecs.length === 3) c.lastSecs = c.curSecs;
+        c.curSecs = [];
+        c.secPush = c.prog && c.prog.phase === 'push';
+      } else if (idx === 1) c.lastSecs = null;
+    }
   }
 
   // Verkehr: Auto auf schneller Runde dicht hinter einem anderen (verwirbelte Luft, Behinderung)
@@ -249,6 +290,7 @@ export class Session extends Race {
     }
     super.step();
     this.trafficCheck();
+    this.sectorCheck();
     const n = this.neutral;
     if (n && n.type === 'red' && n.phase === 'stopping' && this.cars.every(c => c.retired || c.inGarage)) {
       n.phase = 'stopped';
@@ -307,6 +349,7 @@ export class Session extends Race {
     car.move = 0;
     car.d += Math.max(0, car.garageOffset - 2);
     car.prog.phase = 'garage';
+    car.boxInPrev = null;
     car.pass = null;
     if (car.player && this.onPlayerGarage) this.onPlayerGarage(car);
   }

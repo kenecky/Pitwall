@@ -364,3 +364,16 @@
 .pw-cale.dev, .pw-cale.build { background: rgba(56,189,248,.08); border-color: rgba(56,189,248,.3); }
 .pw-cale.done { opacity: .55; }
 .pw-cale small { color: #ffb08a; font-weight: 700; }
+
+/* v13: Sektoren in der Zeitentabelle, Ausscheidungszone */
+.secs { display: inline-flex; gap: 2px; vertical-align: middle; }
+.secs i { width: 9px; height: 13px; border-radius: 2px; background: rgba(255,255,255,.1); }
+.secs i.p { background: #a855f7; } .secs i.g { background: #22c55e; } .secs i.y { background: #facc15; }
+#timing .row.danger { background: rgba(225,6,0,.22) !important; }
+#timing .row.danger .pos { background: #b3141c; color: #fff; border-radius: 3px; }
+.pw-boxbtn.undo { background: linear-gradient(180deg, #64748b, #475569); color: #fff; }
+.pw-dlg-btns.n3 { grid-template-columns: 1fr 1fr; } .pw-dlg-btns.n3 button:last-child { grid-column: 1 / -1; }
+.pw-dlg-btns.n2 { grid-template-columns: 1fr 1.3fr; }
+.pw-dlg-btns button { height: auto; min-height: 48px; }
+.pw-dlg-btns small { display: block; font-size: 10.5px; opacity: .8; font-weight: 600; }
+.pw-cale.sponsor { background: rgba(250,204,21,.07); border-color: rgba(250,204,21,.3); }

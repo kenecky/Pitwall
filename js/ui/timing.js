@@ -27,6 +27,16 @@ function danger(race, car, i) {
   return keep && car.elimSeg === null && i >= keep;
 }
 
+// Pit Wall: Sektoren der schnellen Runde als farbige Quadrate (violett/grün/gelb), sonst OUT / IN
+export function sectorStatus(car) {
+  const ph = car.prog.phase;
+  const sq = list => `<span class="secs">${[0, 1, 2].map(i => `<i class="${list[i] || ''}"></i>`).join('')}</span>`;
+  if (ph === 'out') return '<span class="badge badge-pit">OUT</span>';
+  if (ph === 'push') return car.curSecs && car.curSecs.length ? sq(car.curSecs) : car.lastSecs ? sq(car.lastSecs) : sq([]);
+  if (car.lastSecs) return sq(car.lastSecs);   // Runde gerade beendet: bis Ende Sektor 1 stehen lassen
+  return '<span class="badge badge-pit">IN</span>';
+}
+
 export function renderTiming(el, race, { gapMode, selected }) {
   let st = race.standings();
   // Qualifying: Ausgeschiedene werden ab dem nächsten Abschnitt nicht mehr angezeigt
@@ -61,9 +71,7 @@ export function renderTiming(el, race, { gapMode, selected }) {
     else if (car.unlap) status = '<span class="badge badge-unlap">+1 RD</span>';
     else if (race.isSession && car.elimSeg !== null && car.elimSeg !== undefined) status = `<span class="badge badge-elim">${race.info.segments[car.elimSeg].id}</span>`;
     else if (race.isSession && car.inGarage) status = '<span class="badge badge-garage">BOX</span>';
-    else if (race.isSession && car.prog && car.prog.phase === 'push') status = '<span class="badge badge-push">⏱</span>';
-    else if (race.isSession && car.prog && car.prog.phase === 'out') status = '<span class="badge badge-pit">OUT</span>';
-    else if (race.isSession && car.prog && car.prog.phase === 'cool') status = '<span class="badge badge-pit">IN</span>';
+    else if (race.isSession && car.prog) status = sectorStatus(car);
     else if (car.stopTimer > 0) status = '<span class="badge badge-pit">STOPP</span>';
     else if (car.inPit) status = '<span class="badge badge-pit">BOX</span>';
 

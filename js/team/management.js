@@ -3,6 +3,7 @@
 // Personal (Boxencrew, Ingenieure), Fahrerverträge und Stimmung, Sponsorenziele, Vorstand und Ruf.
 // Alle Beträge in Mio. $. Der Zustand liegt in season.mgmt (reine Daten, speicherbar).
 import { optimum } from './setup.js';
+import { SEASON_2026 } from '../data/season2026.js';
 
 export const CAP = 215;                 // Budgetobergrenze pro Saison (Mio. $)
 export const PU_ALLOWANCE = 4;          // Antriebseinheiten pro Saison ohne Strafe
@@ -239,7 +240,9 @@ export function signPartner(season, idx) {
 export function dropPartner(season, idx) {
   const m = season.mgmt;
   if (!m.sponsors[idx]) return 'Unbekannter Partner.';
+  const name = m.sponsors[idx].name;
   m.sponsors.splice(idx, 1);
+  m.events = (m.events || []).filter(e => e.sponsor !== name || e.done);
   m.board.rep = clamp(m.board.rep - 2, 0, 100);
   return null;
 }
@@ -586,6 +589,7 @@ export function negoSign(season) {
   if (n.kind === 'title') { if (m.titleSponsor) return 'Es gibt bereits einen Titelsponsor.'; m.titleSponsor = { ...n.cur }; m.market.title = []; }
   else { if (m.sponsors.length >= 3) return 'Höchstens drei Partner.'; m.sponsors.push({ ...n.cur, hits: 0 }); if (i >= 0) list.splice(i, 1); }
   m.nego = null;
+  scheduleSponsorEvents(season, n.name, n.kind === 'title' ? 4 : 2);
   return null;
 }
 export function negoCancel(season) {
@@ -633,6 +637,7 @@ export function calendarEvents(season, calendar, trackName) {
   });
   for (const p of (m && m.projects) || []) ev.push({ date: p.done, kind: 'dev', text: `${DEV[p.type].name}: ${DEV_SIZE[p.size].name} fertig` });
   if (m && m.construction) ev.push({ date: m.construction.done, kind: 'build', text: `${BUILDINGS[m.construction.key].name} Stufe ${m.construction.lvl} fertig` });
+  for (const e of (m && m.events) || []) if (!e.done) ev.push({ date: e.date, kind: 'sponsor', id: e.id, text: `${SPONSOR_EVENTS[e.type].name} · ${e.sponsor}` });
   // bei gleichem Datum: Fertigstellungen vor dem Rennen
   return ev.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'race') - (b.kind === 'race'));
 }
@@ -656,4 +661,66 @@ export function advanceTo(season, date) {
     m.construction = null;
   }
   return notes;
+}
+
+// ---------- Sponsoren-Termine ----------
+// Fahrer-Termin, Showrun oder Werksführung zwischen den Rennen. Hingehen: Geld + Zufriedenheit, kostet Fahrerstimmung.
+// Absagen: Sponsor verärgert; unter 10 Zufriedenheit kündigt er.
+export const SPONSOR_EVENTS = {
+  meet:  { name: 'Fahrer-Termin', hint: 'Autogrammstunde und Fotos mit Kunden', driver: true, money: 0.4, mood: -3 },
+  show:  { name: 'Showrun', hint: 'Demofahrt in der Innenstadt', driver: true, money: 0.8, mood: -5 },
+  visit: { name: 'Werksführung', hint: 'Gäste des Sponsors besuchen die Fabrik', driver: false, money: 0.3, mood: 0 },
+};
+export function scheduleSponsorEvents(season, sponsor, count) {
+  const m = season.mgmt;
+  m.events = m.events || [];
+  const races = SEASON_2026.map(e => raceDate(season, e));
+  const end = races[races.length - 1];
+  const start = addDays(season.date, 7);
+  const span = Math.max(14, (new Date(`${end}T12:00:00Z`) - new Date(`${start}T12:00:00Z`)) / 86400000);
+  const types = Object.keys(SPONSOR_EVENTS);
+  for (let i = 0; i < count; i++) {
+    let d = addDays(start, Math.round(span * (i + 0.3 + hash(`${sponsor}${i}d`) * 0.5) / count));
+    // nicht an Rennwochenenden (Freitag bis Montag)
+    for (let k = 0; k < 6 && races.some(r => d >= addDays(r, -2) && d <= addDays(r, 1)); k++) d = addDays(d, 3);
+    const type = types[Math.floor(hash(`${sponsor}${i}t`) * types.length)];
+    m.events.push({ id: `${sponsor}-${i}-${d}`, date: d, kind: 'sponsor', sponsor, type, done: false });
+  }
+}
+export function sponsorByName(m, name) {
+  if (m.titleSponsor && m.titleSponsor.name === name) return m.titleSponsor;
+  return m.sponsors.find(x => x.name === name) || null;
+}
+export function migrateEvents(season) {
+  const m = season.mgmt;
+  if (!m || m.events) return;
+  m.events = [];
+  if (m.titleSponsor) scheduleSponsorEvents(season, m.titleSponsor.name, 2);
+  for (const sp of m.sponsors) scheduleSponsorEvents(season, sp.name, 1);
+}
+// choice: Fahrer-ID, 'go' (ohne Fahrer) oder 'decline'
+export function resolveSponsorEvent(season, id, choice) {
+  const m = season.mgmt;
+  const ev = (m.events || []).find(e => e.id === id);
+  if (!ev || ev.done) return null;
+  ev.done = true;
+  const sp = sponsorByName(m, ev.sponsor);
+  const t = SPONSOR_EVENTS[ev.type];
+  if (!sp) return `${ev.sponsor} ist kein Partner mehr – Termin entfällt.`;
+  if (sp.happy === undefined) sp.happy = 70;
+  if (choice === 'decline') {
+    sp.happy = clamp(sp.happy - 22, 0, 100);
+    if (sp.happy < 10 && sp !== m.titleSponsor) {
+      m.sponsors.splice(m.sponsors.indexOf(sp), 1);
+      m.events = m.events.filter(e => e.sponsor !== sp.name || e.done);
+      return `${sp.name} ist verärgert und beendet die Partnerschaft.`;
+    }
+    return `Termin abgesagt – ${sp.name} ist enttäuscht (Zufriedenheit ${sp.happy}).`;
+  }
+  const amount = r1(t.money * { top: 1.4, mid: 1, back: 0.8 }[m.tier]);
+  m.money += amount;
+  (m.log || (m.log = [])).push({ what: `${t.name} bei ${sp.name}`, amount });
+  sp.happy = clamp(sp.happy + 10, 0, 100);
+  if (t.driver && m.drivers[choice]) m.drivers[choice].morale = clamp(m.drivers[choice].morale + t.mood, 0, 100);
+  return `${t.name} bei ${sp.name}: +${money(amount)}${t.driver && m.drivers[choice] ? `, Stimmung ${choice} ${t.mood}` : ''}. ${sp.name} ist zufrieden.`;
 }

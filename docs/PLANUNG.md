@@ -298,3 +298,18 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Wochenende: „Wochenende fortsetzen“. Bei gleichem Datum kommen Fertigstellungen vor dem Rennen.
 - Vorsaison-Checkliste verschwindet, sobald alle Pflichtaufgaben erledigt sind.
 - Alte Spielstände: Datum wird aus dem nächsten Rennen geschätzt, laufende Projekte/Bauten bekommen ein Fertigstellungsdatum.
+
+### v13 – Sektoren, Ausscheidungszone, Reinholen abbrechen, Sponsor-Termine
+- Training/Qualifying: keine Überholmanöver im Log.
+- **Sektoren in ZEITEN** (Training/Qualifying): drei Zeitsektoren (je ⅓ Runde) als Quadrate in der Statusspalte –
+  violett = absolute Bestzeit, grün = persönliche Bestzeit, gelb = keine Verbesserung; erscheinen nacheinander während der
+  schnellen Runde. Aufwärmrunde „OUT“; nach der schnellen Runde bleiben die Quadrate bis Ende Sektor 1 stehen, dann „IN“
+  bzw. neue Quadrate bei der nächsten schnellen Runde. (`Session.sectorCheck`, `sectorStatus` in timing.js)
+- ZEITEN: Ausscheidungszone im Qualifying rot markiert (wie im Tower).
+- Qualifying/Training: „Reinholen“ lässt sich zurücknehmen („REINHOLEN ABBRECHEN“), solange das Auto noch nicht in der
+  Boxengasse ist.
+- **Sponsor-Termine** im Kalender: Titelsponsor 4, Partner 2 pro Saison (nicht an Rennwochenenden): Fahrer-Termin, Showrun
+  (Fahrer nötig, kostet 3 bzw. 5 Stimmung) oder Werksführung. Beim Termin Auswahl: Fahrer schicken / Gäste empfangen /
+  absagen. Hingehen: 0,3–0,8 Mio. $ (nach Teamstärke) und Zufriedenheit +10; Absagen: −22, Partner unter 10 kündigt.
+  Zufriedenheit wird bei den Sponsoren angezeigt.
+- Eigener Auswahldialog `pwChoose` (mehrere Knöpfe); `pwConfirm` baut darauf auf.
