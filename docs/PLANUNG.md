@@ -40,7 +40,7 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - [x] **M1 – Grundgerüst und Einzelrennen** (v1)
 - [x] **M2 – Renn-Strategie komplett** (v2): Strategiewahl A/B vor dem Start, Energie-/Overtake-Modus, Teamorder,
       Circle of Doom mit Rejoin-Vorhersage, Undercut/Overcut-Hinweise mit Boxenverlust, SC/VSC-Fenster, Doppelstopp-Warnung
-- [ ] **M3 – Teamfunk**: Fahrer melden sich (Reifen, Wetter, Schäden, Beschwerden), Antwort per Schnellauswahl, Stimmung
+- [x] **M3 – Teamfunk** (v3): Fahrer melden sich (Reifen, Wetter, Schäden, Verkehr, Beschwerden), Antwort per Schnellauswahl, Stimmung
 - [ ] **M4 – Rennwochenende**: Setup im Training (Flügel, Abstimmung, Rückmeldung), Quali-Runs timen (Verkehr, freie Runde),
       Reifen-Kontingent, Sprint
 - [ ] **M5 – Saison**: Kalender, Speichern/Fortsetzen, Team- und Fahrerwertung
@@ -103,3 +103,21 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   in der Box), SC/VSC-Verlust, Reifen halten nicht bis zum geplanten Stopp, Doppelstopp
 - Recherche „Circle of Doom“: kaum öffentliche Quellen; Prinzip laut Teams: Boxenverlust nutzen, um die Position relativ
   zum Feld beim Rauskommen zu berechnen und freie Luft zu finden (Aston-Martin-Strategieinterview, Motorsport.com)
+
+### v3 – Zweikampf-Taktiken, M3 Teamfunk
+- **Zweikampf je Fahrer** (`TACTIC` in `js/team/pitwall.js`):
+  Normal · **Überholen** (Überholchance ×1,4, Aggressivität ×1,25 → mehr Kollisionsrisiko, Reifen ×1,08) ·
+  **Halten** (keine Angriffe, Hintermann überholt ×0,65 seltener) ·
+  **Aufhalten** (keine Angriffe, +0,8 s/Runde, Hintermann ×0,5, Reifen ×0,85 – damit der Teamkollege davor wegfahren kann)
+- **Teamfunk** (`js/team/radio.js`), Zufall nur über `race.chatRand()`:
+  - Fahrer melden sich bei: Reifen am Ende, Regen auf Slicks, Abtrocknen auf Inters, Frontflügel-Schaden, leerer Batterie
+    (Overtake), festhängen hinter Gegner/Teamkollege, blauen Flaggen, Hintermann kommt näher beim Schonen, Strafe,
+    langsamem Stopp, Tausch-Anweisung, gutem Rennen
+  - Höchstens eine offene Meldung je Fahrer, Mindestabstände je Art; ~10–15 Meldungen pro Rennen
+  - Antwort per Schnellauswahl (2–3 Knöpfe) mit Wirkung (Box, Tempo, Energie, Taktik, Teamorder) und Stimmung;
+    Zeitbalken – unbeantwortet nach 20–30 s: Stimmung −3
+  - Eigene Funksprüche: Lob, Konzentrieren (vorsichtiger), Reifenstatus? (Fahrer beschreibt den Grip), Motivieren;
+    zu oft dasselbe nervt (Stimmung −4)
+  - Neue Meldung: Funkton, Vibration, Tempo auf 2×, Hinweis, wenn ein anderer Tab offen ist
+- **Stimmung** 0–100 (Start 70): unter 50 langsamer (bis +0,4 s/Runde), unter 40 mehr Fehler, über 50 leicht schneller
+- Hinweis: Funkmeldungen enthalten Funktionen (Antwort-Wirkung) – beim Speichern (M5) über die Meldungsart neu aufbauen

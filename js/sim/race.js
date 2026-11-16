@@ -31,13 +31,13 @@ import { rollRaceEvents, updateEvents, rollLooseWheel } from './events.js';
 import { rollBlueFlag, rollNeutralCases, rollChicaneCut, rollPitLine, rollPitClosedEntry, rollLanguage } from './cases2.js';
 import { updateWeatherEvents } from './weatherEvents.js';
 import { energyStep, energyEdge } from './energy.js';
-import { PACE, paceOf } from '../team/pitwall.js';
+import { paceOf, tacticOf, moodOf } from '../team/pitwall.js';
 export { COMPOUNDS };
 
 // Vorsicht nach Strafen: weniger Risiko und Fehler, aber auch etwas langsamer (0 … 1)
 // Pit Wall: Tempo-Anweisung des Teamchefs verändert Risiko (nur eigene Autos)
-export const aggressionOf = car => car.driver.aggression * (1 - 0.35 * (car.caution || 0)) * paceOf(car).risk;
-export const errorsOf = car => car.driver.errors * (1 - 0.3 * (car.caution || 0)) * paceOf(car).risk;
+export const aggressionOf = car => car.driver.aggression * (1 - 0.35 * (car.caution || 0)) * paceOf(car).risk * tacticOf(car).agg;
+export const errorsOf = car => car.driver.errors * (1 - 0.3 * (car.caution || 0)) * paceOf(car).risk * moodOf(car).err;
 
 function coolDownSpeed(tr, car) {
   if (car.parked) return 0;
@@ -124,7 +124,7 @@ export class Race {
         gridPos: 0,
         caution: Math.min(0.8, caution[drv.id] || 0),
         player: drv.team === playerTeam,   // Pit Wall: Auto des Spielers
-        paceMode: 'normal', tyreWear: 0, boxCall: null, advice: null,
+        paceMode: 'normal', tyreWear: 0, boxCall: null, advice: null, tactic: 'normal', mood: 70,
       };
     });
     this.carById = Object.fromEntries(this.cars.map(c => [c.id, c]));
@@ -347,7 +347,7 @@ export class Race {
     let warm = C.warm && fresh < tr.L * 1.1 ? C.warm * (1 - fresh / (tr.L * 1.1)) : 0;
     // danach 2–3 Runden Spitzen-Grip (darum funktioniert der Undercut)
     if (C.warm && fresh >= tr.L * 1.1 && fresh < tr.L * 3.5) warm -= 0.6 * (1 - (fresh - tr.L * 1.1) / (tr.L * 2.4));
-    let pace = car.player ? paceOf(car).dt : 0;
+    let pace = car.player ? paceOf(car).dt + tacticOf(car).dt + moodOf(car).dt : 0;
     if (car.letBy) pace += 1.2;   // Teamorder: vom Gas gehen, damit der Teamkollege aufschließt
     return tr.baseLap + car.basePenalty + (C.wet ? 0 : C.offset) + wet + deg + 2.2 * (1 - progress) + car.lapNoise + dmg + careful + warm + pace;
   }
@@ -451,7 +451,7 @@ export class Race {
       car.d += car.move;
       if (car.finished) { this.coolDown(car, prev); continue; }
       // Pit Wall: Reifenverschleiß live (je gefahrenem Meter); unter Neutralisierung und in der Box kaum
-      if (car.player && car.move > 0) car.tyreWear += car.move / tr.L * (car.inPit ? 0.1 : this.neutral ? 0.35 : paceOf(car).wear);
+      if (car.player && car.move > 0) car.tyreWear += car.move / tr.L * (car.inPit ? 0.1 : this.neutral ? 0.35 : paceOf(car).wear * tacticOf(car).wear);
       this.handleCrossings(car, prev);
       checkPendingIncident(this, car, prev);
       if (car.limp && !car.retired) updateLimp(this, car);
@@ -588,7 +588,8 @@ export class Race {
           continue;
         }
         const zone = tr.zones.find(z => inRange(tr, B.d, z.start, z.end));
-        const hold = B.player && A.player && this.teamOrder === 'hold';   // Teamorder: Positionen halten
+        // Teamorder „Position halten“ bzw. Taktik ohne Angriffe (Position halten, Aufhalten)
+        const hold = (B.player && A.player && this.teamOrder === 'hold') || (B.player && tacticOf(B).pass === 0);
         if (zone && !banned && !hold) {
           const key = `${B.lap}:${zone.corner}`;
           const zoneName = zone.corner;
@@ -685,6 +686,7 @@ export class Race {
     p -= (aggressionOf(A) - 65) / 400;
     if (B.lap === 0) p += 0.12;   // Startrunde: mehr Bewegung im Feld
     p += energyEdge(B, A);        // mehr Hybrid-Energie hilft beim Überholen
+    p *= (tacticOf(B).pass || 1) * tacticOf(A).def;   // Pit Wall: Taktik (Überholen / Verteidigen / Aufhalten)
     p *= zone.factor;
     p *= 1 - 0.35 * this.weather.wetness;   // Gischt und wenig Grip bei Nässe
     return Math.max(0.02, Math.min(0.85, p));

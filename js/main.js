@@ -24,10 +24,11 @@ import { loadSettings, saveSettings } from './storage.js';
 import {
   PACE, PACE_ORDER, ERS, ERS_ORDER, STRATEGISTS, playerCars, setPace, setErs, callBox, cancelBox, tooLateForBox, tyreLife, adviceFor,
   lapsLeftOnTyres, nextStop, stopDue, shiftStop, dropStop, setStopCompound, addStop, setTeamOrder, swapCars, teamStep,
-  rejoin, pitLoss, timeOf, circleAngle, lapTime, strategyOptions, applyStrategy, freshGain, fmt,
+  rejoin, pitLoss, timeOf, circleAngle, lapTime, strategyOptions, applyStrategy, freshGain, fmt, TACTIC, TACTIC_ORDER, setTactic,
 } from './team/pitwall.js';
+import { radioStep, answer, openMessage, ownCall, OWN_CALLS, moodLabel } from './team/radio.js';
 
-export const VERSION = 2;
+export const VERSION = 3;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -161,6 +162,7 @@ function newRace(seed = randomSeed()) {
   ui.sel = {};
   ui.built = null;
   ui.lastOwnEv = 0;
+  ui.lastMsg = 0;
   $('seedInfo').textContent = `Rennen #${seed}`;
   $('seedInput').value = '';
   $('resultScreen').classList.add('hidden');
@@ -353,6 +355,7 @@ function frame(now) {
       race.step();
       autoDirect(race);
       teamStep(race);
+      radioStep(race);
       acc -= DT;
       n++;
       if (watchEvents()) break;
@@ -399,6 +402,15 @@ function watchEvents() {
     }
   }
   if (evs.length) ui.lastOwnEv = evs[evs.length - 1].id;
+  const R = race.pwRadio;
+  if (R && R.seq > (ui.lastMsg || 0)) {
+    const m = R.msgs[R.msgs.length - 1];
+    ui.lastMsg = R.seq;
+    sound.radio();
+    vibrate([40, 30, 40]);
+    if (activeTab !== 'wall') toast(`📻 ${m.carId}: ${m.text}`, 3500);
+    brake = true;
+  }
   if (brake && settings.speed > 2 && race.phase === 'running') { setSpeed(2); return true; }
   return false;
 }
@@ -465,6 +477,7 @@ function buildWall() {
         <span class="pw-name">${esc(c.driver.first)} ${esc(c.driver.last)}<small data-f="sub"></small></span>
         <span class="pw-gaps" data-f="gaps"></span>
       </div>
+      <div class="pw-radio hidden" data-f="radio"></div>
       <div class="pw-row">
         <span class="pw-tyre" data-f="tyre"></span>
         <span class="pw-life"><b data-f="life"></b></span>
@@ -473,6 +486,8 @@ function buildWall() {
       <div class="pw-label">TEMPO</div>
       <div class="pw-seg">${PACE_ORDER.map(p => `<button data-pace="${p}"><b>${PACE[p].short}</b><small data-l="${p}"></small></button>`).join('')}</div>
       <div class="pw-hold" data-f="hold"></div>
+      <div class="pw-label">ZWEIKAMPF</div>
+      <div class="pw-seg">${TACTIC_ORDER.map(t => `<button data-tac="${t}">${TACTIC[t].short}</button>`).join('')}</div>
       <div class="pw-label">ENERGIE</div>
       <div class="pw-ers"><span class="pw-life"><b data-f="ers"></b></span><span class="pw-meta" data-f="erspct"></span></div>
       <div class="pw-seg ers">${ERS_ORDER.map(m => `<button data-ers="${m}">${ERS[m].short}</button>`).join('')}</div>
@@ -483,7 +498,9 @@ function buildWall() {
         <button class="pw-boxbtn" data-act="box">BOX</button>
       </div>
       <div class="pw-rejoin" data-f="rejoin"></div>
-      <div class="pw-hint" data-f="hint"></div>
+ <div class="pw-hint" data-f="hint"></div>
+      <div class="pw-label">FUNK AN ${c.id}</div>
+      <div class="pw-calls">${OWN_CALLS.map(o => `<button data-call="${o.id}">${o.label}</button>`).join('')}</div>
       <button class="pw-circbtn" data-act="circle" aria-label="Circle of Doom">◎</button>
     </div>`).join('') + `
     <div class="pw-orders">
@@ -523,7 +540,8 @@ function renderWall() {
     f('pos').textContent = car.retired ? 'OUT' : `P${i + 1}`;
     const pens = unservedSecs(car);
     const serve = [...(car.serve || []), ...(car.serving ? [car.serving] : [])].map(p => (p.type === 'dt' ? 'Durchfahrt' : 'Stop & Go'));
-    f('sub').textContent = [`Start P${car.gridPos}`, car.strategy ? `Strategie ${car.strategy}` : '', car.dsq ? 'DSQ' : '', pens ? `+${pens} s Strafe` : '', ...serve].filter(Boolean).join(' · ');
+    const ml = moodLabel(car.mood ?? 70);
+    f('sub').textContent = [`Start P${car.gridPos}`, car.strategy ? `Strategie ${car.strategy}` : '', `Stimmung ${ml[1]} ${ml[0]}`, car.dsq ? 'DSQ' : '', pens ? `+${pens} s Strafe` : '', ...serve].filter(Boolean).join(' · ');
     const ahead = st[i - 1], behind = st[i + 1];
     let gaps = '';
     if (!race.preStart && !car.retired) {
@@ -552,6 +570,17 @@ function renderWall() {
     f('ers').style.width = `${e}%`;
     f('ers').style.background = e > 30 ? '#38bdf8' : '#f97316';
     f('erspct').innerHTML = `<b>${e}%</b>`;
+    for (const b of el.querySelectorAll('[data-tac]')) { b.classList.toggle('on', (car.tactic || 'normal') === b.dataset.tac); b.disabled = gone; }
+    for (const b of el.querySelectorAll('[data-call]')) b.disabled = gone || race.preStart;
+    const rb = f('radio');
+    const msg = openMessage(race, car);
+    const rsig = msg ? msg.id : 0;
+    if (rb.dataset.sig !== String(rsig)) {
+      rb.dataset.sig = String(rsig);
+      rb.classList.toggle('hidden', !msg);
+      rb.innerHTML = msg ? `<div class="pw-rtext">📻 <b>${car.id}:</b> „${esc(msg.text)}“</div><div class="pw-ropts">${msg.options.map(o => `<button data-msg="${msg.id}" data-opt="${o.id}">${esc(o.label)}</button>`).join('')}</div><i class="pw-rtime"></i>` : '';
+    }
+    if (msg) { const tl = rb.querySelector('.pw-rtime'); tl.style.width = `${Math.max(0, Math.min(100, (msg.until - race.time) / (msg.until - msg.t) * 100))}%`; }
     for (const b of el.querySelectorAll('[data-ers]')) { b.classList.toggle('on', (car.ersMode || 'normal') === b.dataset.ers); b.disabled = gone; }
     // Plan
     const nx = nextStop(car);
@@ -638,6 +667,8 @@ function hintFor(car, st) {
       return { text: `Undercut auf ${ahead.id} (${fmt(g.time)} s): frische ${COMPOUNDS[cmp].name} bringen ~${fmt(gain)} s/Runde. ${r.ahead && r.ahead.gap < 1.5 ? `Aber Verkehr hinter ${r.ahead.car.id}!` : 'Rauskommen in freier Luft.'}`, cls: 'warn' };
     }
   }
+  if (car.tactic === 'block') return { text: `Aufhalten: ${car.id} fährt ~0,8 s/Runde langsamer und hält das Feld auf${mate && st.indexOf(mate) < i ? ` – ${mate.id} kann sich absetzen` : ''}.`, cls: 'warn' };
+  if (car.tactic === 'overtake' && (!ahead || (race.gap(car, ahead) || { time: 9 }).time > 1.5)) return { text: 'Überholen: kein Auto in Reichweite – mehr Risiko ohne Nutzen.' };
   const nx = nextStop(car);
   if (nx) {
     const hold = lapsLeftOnTyres(race, car);
@@ -661,7 +692,10 @@ $('wall').addEventListener('click', e => {
   const el = e.target.closest('[data-car]');
   if (!el) return;
   const car = race.carById[el.dataset.car];
+  if (b.dataset.msg) { answer(race, Number(b.dataset.msg), b.dataset.opt); renderWall(); return; }
   if (b.dataset.pace) setPace(race, car, b.dataset.pace);
+  else if (b.dataset.tac) setTactic(race, car, b.dataset.tac);
+  else if (b.dataset.call) ownCall(race, car, b.dataset.call);
   else if (b.dataset.ers) setErs(race, car, b.dataset.ers);
   else if (b.dataset.cmp) {
     ui.sel[car.id] = b.dataset.cmp;

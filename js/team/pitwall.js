@@ -12,6 +12,38 @@ export const PACE = {
 export const PACE_ORDER = ['save', 'normal', 'push', 'attack'];
 export const paceOf = car => (car && car.player && PACE[car.paceMode]) || PACE.normal;
 
+// Zweikampf-Taktik: pass = Faktor eigener Angriffe (0 = keine), def = Faktor der Überholchance des Hintermanns,
+// agg = Aggressivität (Kollisionsrisiko), dt = Rundenzeit, wear = Reifenverschleiß
+export const TACTIC = {
+  normal:   { id: 'normal',   short: 'NORMAL',    name: 'Normal fahren',        pass: 1,    def: 1,    agg: 1,    dt: 0,   wear: 1 },
+  overtake: { id: 'overtake', short: 'ÜBERHOLEN', name: 'Überholen versuchen',  pass: 1.4,  def: 1,    agg: 1.25, dt: 0,   wear: 1.08 },
+  defend:   { id: 'defend',   short: 'HALTEN',    name: 'Position halten',      pass: 0,    def: 0.65, agg: 1.1,  dt: 0,   wear: 1 },
+  block:    { id: 'block',    short: 'AUFHALTEN', name: 'Hintermänner aufhalten', pass: 0,  def: 0.5,  agg: 1.2,  dt: 0.8, wear: 0.85 },
+};
+export const TACTIC_ORDER = ['normal', 'overtake', 'defend', 'block'];
+export const tacticOf = car => (car && car.player && TACTIC[car.tactic]) || TACTIC.normal;
+
+// Stimmung des Fahrers (0–100): gute Laune = etwas schneller und konzentrierter
+export function moodOf(car) {
+  if (!car || !car.player) return { dt: 0, err: 1 };
+  const m = car.mood ?? 70;
+  return { dt: m < 50 ? (50 - m) * 0.008 : -(m - 50) * 0.002, err: m < 40 ? 1 + (40 - m) * 0.015 : 1 };
+}
+
+export function setTactic(race, car, t) {
+  if (!TACTIC[t] || car.tactic === t || car.retired || car.finished) return false;
+  car.tactic = t;
+  const ahead = race.standings()[race.standings().indexOf(car) - 1];
+  const T = {
+    normal: 'Normal weiterfahren, keine besonderen Anweisungen.',
+    overtake: `Du musst ${ahead ? `an ${ahead.id} ` : ''}vorbei, versuch es!`,
+    defend: 'Position halten, keine unnötigen Risiken.',
+    block: 'Halt die Autos hinter dir auf, so lange es geht.',
+  };
+  radio(race, car, T[t]);
+  return true;
+}
+
 // Energie-Modus (Hybrid): Laden – Normal – Overtake
 export const ERS = {
   harvest:  { id: 'harvest',  short: 'LADEN' },

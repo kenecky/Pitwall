@@ -140,3 +140,17 @@
 .pw-opt .tyres { display: flex; gap: 4px; margin-top: 5px; align-items: center; font: 600 10.5px var(--mono); }
 .pw-opt .tyres .pw-tyre { width: 20px; height: 20px; font-size: 9.5px; border-width: 2.5px; }
 #speedBtn { touch-action: none; -webkit-touch-callout: none; }
+
+/* ---------- v3: Teamfunk, Zweikampf ---------- */
+.pw-radio { position: relative; margin: 8px 0 2px; padding: 8px 8px 10px; border-radius: 6px; background: #1d2433; border: 2px solid #38bdf8; box-shadow: 0 0 12px rgba(56,189,248,.3); overflow: hidden; }
+.pw-rtext { font-size: 13px; line-height: 1.35; color: #e6f3ff; }
+.pw-ropts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.pw-ropts button { flex: 1 1 auto; min-height: 36px; padding: 0 10px; border-radius: 6px; background: #38bdf8; color: #06202e; border: 2px solid #0c0e12; font: 800 11.5px var(--mono); }
+.pw-ropts button + button { background: #2b3445; color: #e6e9ef; }
+.pw-rtime { position: absolute; left: 0; bottom: 0; height: 3px; background: #38bdf8; transition: width .3s linear; }
+.pw-seg button[data-tac="overtake"].on { background: #f87171; }
+.pw-seg button[data-tac="defend"].on { background: #34d399; }
+.pw-seg button[data-tac="block"].on { background: #fb923c; }
+.pw-calls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; }
+.pw-calls button { height: 32px; border-radius: 5px; background: #1b2230; border: 2px solid #0c0e12; font: 700 9.5px var(--mono); color: #9fd6f5; }
+.pw-name small { white-space: normal; line-height: 1.3; }

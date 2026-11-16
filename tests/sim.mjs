@@ -6,6 +6,7 @@ import { TRACKS } from '../js/data/tracks/index.js';
 import { buildTrack } from '../js/sim/trackModel.js';
 import { Race } from '../js/sim/race.js';
 import { distanceFor } from '../js/sim/length.js';
+import { radioStep, answer } from '../js/team/radio.js';
 import { autoDirect } from '../js/control/autoDirector.js';
 import { setPace, playerCars, strategyOptions, applyStrategy, teamStep, rejoin, swapCars, lapsLeftOnTyres, tyreLife } from '../js/team/pitwall.js';
 
@@ -31,7 +32,9 @@ for (let k = 0; k < N; k++) {
     race.step();
     autoDirect(race);
     teamStep(race);
+    radioStep(race);
     steps++;
+    if (steps % 200 === 0 && race.pwRadio) for (const m of race.pwRadio.msgs) if (!m.done && race.time - m.t > 5) answer(race, m.id, m.options[(m.id + k) % m.options.length].id);
     if (steps % 20 === 0 && race.phase === 'running') {
       for (const c of mine) {
         if (c.retired || c.finished || c.boxCall || c.inPit) continue;
@@ -44,6 +47,9 @@ for (let k = 0; k < N; k++) {
   const st = race.standings();
   const ok = race.phase === 'finished';
   for (const e of race.events) if (/^Teamorder/.test(e.text)) console.log('   ', e.text);
+  const R = race.pwRadio || { msgs: [] };
+  const kinds = {}; for (const m of R.msgs) kinds[m.kind] = (kinds[m.kind] || 0) + 1;
+  console.log('    Funk:', JSON.stringify(kinds), 'verfallen', R.msgs.filter(m => m.expired).length, 'Stimmung', mine.map(c => `${c.id} ${Math.round(c.mood)}`).join(' '));
   if (!ok) fails++;
   const ev = race.events;
   const cnt = ty => ev.filter(e => e.type === ty).length;
