@@ -179,7 +179,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 16</div>
+      <div class="app-version">Version 17</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -187,6 +187,15 @@
         </label>
         <div id="seedInfo" class="seed-info"></div>
       </details>
+    </div>
+  </div>
+
+  <!-- Abrechnung nach dem Rennwochenende -->
+  <div id="bookScreen" class="overlay hidden">
+    <div class="sheet">
+      <h2 class="sheet-title">💶 Abrechnung</h2>
+      <div id="bookBody"></div>
+      <div class="sheet-actions"><button id="bookGo" class="primary-btn">Weiter zur Teamzentrale</button></div>
     </div>
   </div>
 
@@ -241,8 +250,8 @@
 
   <div id="wxScreen" class="overlay hidden">
     <div class="sheet wx-sheet">
-      <div class="sheet-head-x"><h2 class="sheet-title">WETTER · WOCHENENDE</h2><button id="wxCloseBtn" class="x-btn" aria-label="Schließen">✕</button></div>
-      <div id="wxBody"></div>
+      <div class="sheet-head-x"><h2 class="sheet-title">WETTER</h2><button id="wxCloseBtn" class="x-btn" aria-label="Schließen">✕</button></div>
+      <div id="wxBody"><div id="wxNow"></div><div id="wxSessions"></div></div>
     </div>
   </div>
 

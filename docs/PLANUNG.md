@@ -349,3 +349,17 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - **Reifenverschleiß unter Neutralisierung** (jetzt für alle Autos, live je Meter): hinter dem Safety Car 30 % einer
   Rennrunde (−70 %), unter VSC 40 % (−60 %), unter Rot 30 %, in der Boxengasse 10 %. Begründung: rund 40 % langsamer,
   kaum Last beim Bremsen und in Kurven. KI-Autos nutzen jetzt ebenfalls den Live-Verschleiß.
+
+### v17 – Reiter, Abrechnung, Journal, Presse, Tempo, Wetter
+- Fahrer-Reiter zeigen Position und aktuellen Reifen mit Runden (Rennen und Sessions); Reiter bleiben beim Scrollen oben fest.
+- **Abrechnung** nach jedem Saison-Wochenende als eigenes Fenster vor der Teamzentrale: Kontostand vorher, alle Buchungen
+  des Wochenendes, Kontostand nachher mit Differenz.
+- Ergebnis nach dem letzten Teil eines Saison-Wochenendes: Knopf „Weiter“ (statt „Zur Startseite“).
+- **Finanzen → Buchungen**: Journal aller Buchungen der Saison (`m.ledger` mit Datum und Rennen), aufklappbar gruppiert
+  nach Monaten oder nach Rennen (Vorsaison / nach Rennen x), je Gruppe mit Summe.
+- **Pressestimmen** im Rennergebnis (Rennen und Sprint, `js/team/press.js`, fiktive Medien): Gesamturteil am Maßstab
+  der Teamstärke (erwarteter Platz nach Grundtempo), Strategie (Stopp unter SC/VSC, Undercut gelungen/misslungen,
+  langsamer Stopp, mehr/weniger Stopps als der Sieger), Fahrer (Ausfall, Aufholjagd, Rückfall, Teamduell).
+- Jede Session (Training, Qualifying, Sprint, Rennen) startet mit Tempo 1×.
+- **Wetter**: in der laufenden Session wieder das Regenradar (mit Vorhersage +5…+60 Min. und Zeitregler), darunter die
+  Vorhersage für alle weiteren Sessions des Wochenendes.

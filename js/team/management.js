@@ -315,10 +315,22 @@ export function engineerEstimate(season, score, seed) {
 // ---------- Aktionen in der Teamzentrale ----------
 export function capLeft(m) { return CAP - m.spent; }
 
+// Buchung: im Bericht des aktuellen Wochenendes (m.log) und im Journal der Saison (m.ledger, mit Datum und Rennen)
+function book(m, what, amount) {
+  (m.log || (m.log = [])).push({ what, amount });
+  (m.ledger || (m.ledger = [])).push({ what, amount, date: m.curDate || '', round: m.curRound ?? 0 });
+}
+// Datum/Rennen für Buchungen merken (vor Aktionen in der Teamzentrale und nach dem Rennen)
+export function setBookingContext(season) {
+  if (!season.mgmt) return;
+  season.mgmt.curDate = season.date;
+  season.mgmt.curRound = season.round;
+}
+
 function spend(m, amount, what, capRelevant = true) {
   m.money -= amount;
   if (capRelevant) m.spent += amount;
-  (m.log || (m.log = [])).push({ what, amount: -amount });
+  book(m, what, -amount);
 }
 
 export function startProject(season, type, size) {
@@ -404,6 +416,8 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
   const m = season.mgmt;
   const notes = [];
   m.log = [];
+  m.curDate = season.date;
+  m.curRound = season.round;
   const own = Object.keys(m.drivers);
   const pos = id => res.race.findIndex(r => r.id === id) + 1;
   const ok = id => { const r = res.race.find(x => x.id === id); return r && !r.retired && !r.dsq; };
@@ -417,13 +431,13 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
 
   // Einnahmen: Preisgeld, Titelsponsor, Sponsorenziele
   const prize = 1.2 + pts * 0.12;
-  m.money += prize; m.log.push({ what: 'Preisgeld', amount: prize });
-  if (m.titleSponsor) { m.money += m.titleSponsor.perRace; m.log.push({ what: `Titelsponsor ${m.titleSponsor.name}`, amount: m.titleSponsor.perRace }); }
+  m.money += prize; book(m, 'Preisgeld', prize);
+  if (m.titleSponsor) { m.money += m.titleSponsor.perRace; book(m, `Titelsponsor ${m.titleSponsor.name}`, m.titleSponsor.perRace); }
   for (const s of m.sponsors) {
-    if (s.fee) { m.money += s.fee; m.log.push({ what: `Partner ${s.name}`, amount: s.fee }); }
+    if (s.fee) { m.money += s.fee; book(m, `Partner ${s.name}`, s.fee); }
     const hit = GOALS[s.goal].ok(r);
     s.last = hit;
-    if (hit) { s.hits++; m.money += s.reward; m.log.push({ what: `${s.name}: ${GOALS[s.goal].text}`, amount: s.reward }); }
+    if (hit) { s.hits++; m.money += s.reward; book(m, `${s.name}: ${GOALS[s.goal].text}`, s.reward); }
   }
   // Ausgaben: Personal (Budgetobergrenze), Fahrergehälter (nicht), Reparaturen und Ersatzteile
   const staff = staffCostPerRace(m) + OPS;   // Schlüsselposten + Grundbetrieb (Fabrik, Personal, Reisen, Logistik)
@@ -720,7 +734,7 @@ export function resolveSponsorEvent(season, id, choice) {
   }
   const amount = r1(t.money * { top: 1.4, mid: 1, back: 0.8 }[m.tier]);
   m.money += amount;
-  (m.log || (m.log = [])).push({ what: `${t.name} bei ${sp.name}`, amount });
+  book(m, `${t.name} bei ${sp.name}`, amount);
   sp.happy = clamp(sp.happy + 10, 0, 100);
   if (t.driver && m.drivers[choice]) m.drivers[choice].morale = clamp(m.drivers[choice].morale + t.mood, 0, 100);
   return `${t.name} bei ${sp.name}: +${money(amount)}${t.driver && m.drivers[choice] ? `, Stimmung ${choice} ${t.mood}` : ''}. ${sp.name} ist zufrieden.`;
@@ -844,7 +858,7 @@ export function resolveAgenda(season, ev, choice, teamPos) {
     if (choice === 'budget') {
       if (m.board.rep >= 55 && teamPos <= m.board.target + 1) {
         const extra = { top: 10, mid: 8, back: 6 }[m.tier];
-        m.money += extra; (m.log || (m.log = [])).push({ what: 'Zusatzbudget des Vorstands', amount: extra });
+        m.money += extra; book(m, 'Zusatzbudget des Vorstands', extra);
         return `Der Vorstand bewilligt ${money(extra)} Zusatzbudget.`;
       }
       m.board.rep = clamp(m.board.rep - 4, 0, 100);

@@ -11,12 +11,13 @@ import { serializeRace, restoreRace } from '../js/sim/persist.js';
 import { playerCars, strategyOptions, applyStrategy, teamStep } from '../js/team/pitwall.js';
 import { radioStep } from '../js/team/radio.js';
 import { createWeekend, currentKind, applyWeekend, finishSession, trackSetWear } from '../js/team/weekend.js';
-import { initManagement, teamsForWeekend, afterWeekend, damageFrom, startProject, money } from '../js/team/management.js';
+import { initManagement, teamsForWeekend, afterWeekend, damageFrom, startProject, money, setBookingContext } from '../js/team/management.js';
 import { newSeason, currentEntry, weekendParts, recordWeekend, driverStandings, teamStandings } from '../js/team/season.js';
 
 const team = 'williams';
 let season = newSeason(team);
 initManagement(season, TEAMS, DRIVERS);
+setBookingContext(season);
 console.log('Projekt:', startProject(season, 'aero', 'small') || 'gestartet', '· Konto', money(season.mgmt.money), '· Ziel P' + season.mgmt.board.target);
 let fails = 0;
 for (let w = 0; w < 2; w++) {
@@ -62,7 +63,7 @@ for (let w = 0; w < 2; w++) {
   const notes = afterWeekend(season, TEAMS, DRIVERS, season.results[season.results.length - 1], wk.used || {}, wk.moods || {});
   const m = season.mgmt;
   console.log(`   Bericht: Konto ${money(m.money)} · Cap ${money(m.spent)} · Ruf ${m.board.rep} · Aero ${m.dev.aero} · PU-Alter ${m.pu.age} · Stimmung ${Object.entries(m.drivers).map(([k, d]) => k + ' ' + d.morale).join(' ')} · ${notes.join(' | ')}`);
-  console.log('   Buchungen:', m.report.log.map(l => `${l.what} ${l.amount.toFixed(1)}`).join('; '));
+  console.log('   Buchungen:', m.report.log.length, '· Journal gesamt:', (m.ledger || []).length, '· Daten:', [...new Set((m.ledger || []).map(e => e.date + '/R' + e.round))].join(' '));
   season = JSON.parse(JSON.stringify(season));
 }
 console.log('Fahrer:', driverStandings(season, DRIVERS).slice(0, 5).map(x => `${x.d.id} ${x.pts}`).join(' · '));

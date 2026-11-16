@@ -412,3 +412,17 @@
 .pw-wxrow small { display: block; font-size: 12px; color: #aab0bf; line-height: 1.4; margin-top: 2px; }
 .pw-wxrow.now { border-color: #ff6a3d; }
 .pw-wxrow.past { opacity: .5; }
+
+/* v17: feste Fahrer-Reiter, Abrechnung, Journal, Presse */
+.pw-dtabs { position: sticky; top: 0; z-index: 4; margin: -6px -6px 0; padding: 6px; background: #080c11; }
+.pw-dtabs button span .pw-tyre { width: 16px; height: 16px; font-size: 8.5px; border-width: 2px; font-style: normal; vertical-align: -3px; }
+.pw-bk { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); font-size: 13px; }
+.pw-bk b { font-size: 17px; color: #fff; }
+.pw-bk.top { margin-bottom: 8px; } .pw-bk.bottom { margin-top: 8px; border: 1px solid rgba(255,106,61,.45); flex-wrap: wrap; }
+.pw-bk small { width: 100%; text-align: right; font-weight: 700; }
+#bookBody .pw-res td { padding: 6px 4px; }
+.pw-ledger { margin-top: 8px; border-radius: 12px; background: var(--pw-card); border: 1px solid var(--pw-line); }
+.pw-ledger summary { display: flex; justify-content: space-between; padding: 10px 12px; cursor: pointer; font-size: 13px; text-transform: capitalize; }
+.pw-ledger table { margin: 0 8px 8px; width: calc(100% - 16px); font-size: 11.5px; }
+.pw-press { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); border-left: 3px solid #ff6a3d; font-size: 13px; line-height: 1.45; color: #e6e9ef; }
+.pw-press b { display: block; font: 800 11px system-ui, sans-serif; letter-spacing: .08em; color: #ffb08a; text-transform: uppercase; margin-bottom: 2px; }

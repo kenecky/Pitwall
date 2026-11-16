@@ -1012,6 +1012,8 @@ export class Race {
     if (car.ucTarget) car.ucCheck = { target: car.ucTarget, lap: car.lap };
     car.ucTarget = null;
     car.coverFrom = null;
+    if (this.neutral && this.neutral.type !== 'red') car.neutralStops = (car.neutralStops || 0) + 1;   // für Pressestimmen
+    if (car.lastStopTime > 4.2) car.slowStops = (car.slowStops || 0) + 1;
     car.cheapStop = false;
     car.boxCall = null;
     car.tyreAge = 0; car.tyreWear = 0;

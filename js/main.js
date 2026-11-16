@@ -23,12 +23,13 @@ import { unservedSecs } from './control/stewards.js';
 import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, loadGame, clearGame } from './storage.js';
 import { serializeRace, restoreRace } from './sim/persist.js';
 import { newSeason, currentEntry, seasonOver, weekendParts, recordWeekend, driverStandings, teamStandings, finishOf, SPRINT_TRACKS } from './team/season.js';
+import { pressQuotes } from './team/press.js';
 import { initCareer, careerAfterWeekend, careerSeasonEnd, acceptOffer, startNewSeason } from './team/career.js';
 import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
   extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
   migrateManagement, preseasonTasks, readyForRace, signTitle, signPartner, dropPartner, hire, chooseConcept, startSeason, devFactor, staffCostPerRace,
-  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, resolveSponsorEvent, migrateEvents, SPONSOR_EVENTS, agendaDialog, resolveAgenda, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
+  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, resolveSponsorEvent, migrateEvents, SPONSOR_EVENTS, agendaDialog, resolveAgenda, setBookingContext, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
 } from './team/management.js';
 import {
   PACE, PACE_ORDER, ERS, ERS_ORDER, STRATEGISTS, playerCars, setPace, setErs, callBox, cancelBox, tooLateForBox, tyreLife, adviceFor,
@@ -41,7 +42,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 16;
+export const VERSION = 17;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -124,7 +125,7 @@ function updateSound() {
 }
 
 // ---------- Wetter-Fenster ----------
-const weatherPanel = new WeatherPanel({ root: $('wxScreen'), body: $('wxBody'), getRace: () => race });
+const weatherPanel = new WeatherPanel({ root: $('wxScreen'), body: $('wxNow'), getRace: () => race });
 $('wxOpen').addEventListener('click', () => { if (race) showWeather(); });
 // Wetterübersicht des Wochenendes, aufgeteilt nach Sessions (Vorhersage aus denselben Wetterdaten wie die Simulation)
 function sessionWeather(i) {
@@ -148,13 +149,14 @@ function weatherText({ wx, dur }) {
   return { icon: heavy ? '⛈' : wx.showers.some(sh => sh.t0 <= 0) ? '🌧' : '🌦', main: wx.mode === 'rain' ? 'Regen' : 'Wechselhaft', sub: parts.join(' · ') };
 }
 function showWeather() {
-  const wl = weatherLabel(race.weather);
-  $('wxBody').innerHTML = `<div class="pw-mcard"><b>${wl.icon} Jetzt: Strecke ${wl.track}</b><small>${race.weather.rain > 0.1 ? 'Es regnet gerade.' : 'Kein Regen im Moment.'}</small></div>`
-    + wk.seq.map((k, i) => {
+  // Laufende Session: Regenradar wie bisher; alle weiteren Sessions des Wochenendes: Vorhersage
+  weatherPanel.open();
+  const later = wk.seq.map((k, i) => ({ k, i })).filter(x => x.i > wk.idx);
+  $('wxSessions').innerHTML = later.length ? `<div class="setup-label" style="margin-top:14px">VORHERSAGE WEITERE SESSIONS</div>`
+    + later.map(({ k, i }) => {
       const w = weatherText(sessionWeather(i));
-      return `<div class="pw-wxrow${i === wk.idx ? ' now' : ''}${i < wk.idx ? ' past' : ''}"><span class="ic">${w.icon}</span><div><b>${SESSION_NAME[k]}${i === wk.idx ? ' · jetzt' : ''}</b><small>${w.main} – ${w.sub}</small></div></div>`;
-    }).join('') + '<div class="pw-hint">Vorhersage des Wetterdienstes – Zeiten ab Beginn der Session.</div>';
-  $('wxScreen').classList.remove('hidden');
+      return `<div class="pw-wxrow"><span class="ic">${w.icon}</span><div><b>${SESSION_NAME[k]}</b><small>${w.main} – ${w.sub}</small></div></div>`;
+    }).join('') + '<div class="pw-hint">Vorhersage des Wetterdienstes – Zeiten ab Beginn der Session.</div>' : '';
 }
 $('wxCloseBtn').addEventListener('click', () => weatherPanel.close());
 $('wxScreen').addEventListener('click', e => { if (e.target.id === 'wxScreen') weatherPanel.close(); });
@@ -432,6 +434,20 @@ function setMode(mode) {
   saveSettings(settings);
   newRace();
 }
+// ---------- Abrechnung nach dem Rennwochenende (vor der Teamzentrale) ----------
+let pendingHQ = null;
+function showBookings(before, log, after) {
+  $('bookBody').innerHTML = `<div class="pw-bk top"><span>Kontostand vorher</span><b>${money(before)}</b></div>
+    <table class="pw-res"><tbody>${log.map(l => `<tr><td>${esc(l.what)}</td><td style="text-align:right" class="${l.amount < 0 ? 'neg' : 'pos'}">${l.amount > 0 ? '+' : ''}${money(l.amount)}</td></tr>`).join('')}</tbody></table>
+    <div class="pw-bk bottom"><span>Kontostand nachher</span><b class="${after < 0 ? 'neg' : ''}">${money(after)}</b><small class="${after - before < 0 ? 'neg' : 'pos'}">${after - before >= 0 ? '+' : ''}${money(after - before)}</small></div>`;
+  $('bookScreen').classList.remove('hidden');
+}
+$('bookGo').addEventListener('click', () => {
+  $('bookScreen').classList.add('hidden');
+  showHQ(pendingHQ || []);
+  pendingHQ = null;
+});
+
 // ---------- Teamzentrale (Saison): Vollbild-Menü des Teamchefs ----------
 // Startseite in der Saison führt hierher; von hier aus geht es zum nächsten Rennwochenende.
 let hqTab = 'home';          // home | sponsors | staff | drivers | dev | car | money | board | standings
@@ -447,6 +463,7 @@ function showHQ(notes = null) {
   migrateBuildings(season);
   migrateCalendar(season, SEASON_2026);
   migrateEvents(season);
+  setBookingContext(season);
   if (notes) hqNotes = notes;
   if (hqTab === 'report') hqTab = 'home';
   if (hqTab === 'career') hqTab = 'board';
@@ -578,6 +595,7 @@ function renderHQ() {
     h = `${hqBar('KONTO', Math.max(0, m.money), 100, m.money < 10 ? '#f87171' : '#4ade80', money(m.money))}
       ${hqBar('BUDGET-CAP', m.spent, CAP, m.spent > CAP * 0.9 ? '#f87171' : '#ff6a3d', `${money(m.spent)} / ${money(CAP)}`)}
       <div class="pw-mcard"><b>Pro Rennen (ohne Prämien)</b><small>Einnahmen ~${money(inc)} (Titelsponsor, Partner, Preisgeld-Grundbetrag) · Ausgaben ~${money(out)} (Betrieb ${money(OPS)}, Personal ${money(staffCostPerRace(m))}, Fahrer) · Saldo <b class="${inc - out < 0 ? 'neg' : 'pos'}">${money(inc - out)}</b></small></div>
+      ${ledgerHtml(m)}
       <div class="pw-hint">Preisgeld: 0,12 Mio. $ je WM-Punkt zusätzlich. Zur Budgetobergrenze zählen Betrieb, Personal, Entwicklung, Teile und Reparaturen – nicht die Fahrergehälter. Überschreitung: Punktabzug am Saisonende.</div>`;
   } else if (hqTab === 'board') {
     h = `<div class="pw-mcard"><b>Saisonziel: Platz ${m.board.target}</b> in der Teamwertung<small>Erwartung ~${expectedPoints(m.board.target).toFixed(1).replace('.', ',')} Punkte pro Rennen${m.board.last ? ` · zuletzt ${m.board.last.pts}` : ''}</small>
@@ -634,6 +652,28 @@ function animateCalendar(from, to, ev) {
     if (!steps) { tick(); return; }
     setTimeout(tick, per);
   });
+}
+
+// Finanzen: alle Buchungen der Saison, gruppiert nach Monaten oder nach Rennen
+function ledgerHtml(m) {
+  const list = m.ledger || [];
+  const by = ui.ledgerBy || 'month';
+  const groups = new Map();
+  for (const e of list) {
+    const key = by === 'month' ? (e.date || '').slice(0, 7) : String(e.round);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  const label = k => by === 'month'
+    ? (k ? new Date(`${k}-01T12:00:00Z`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : 'Ohne Datum')
+    : Number(k) === 0 ? 'Vorsaison' : `Nach Rennen ${k} · ${trackLabel(SEASON_2026[Number(k) - 1].track)}`;
+  const html = [...groups.entries()].reverse().map(([k, l]) => {
+    const sum = l.reduce((a, e) => a + e.amount, 0);
+    return `<details class="pw-ledger"${k === [...groups.keys()].pop() ? ' open' : ''}><summary><span>${label(k)}</span><b class="${sum < 0 ? 'neg' : 'pos'}">${sum >= 0 ? '+' : ''}${money(sum)}</b></summary>
+      <table class="pw-res"><tbody>${l.map(e => `<tr><td>${e.date ? fmtDate(e.date) : ''}</td><td>${esc(e.what)}</td><td style="text-align:right" class="${e.amount < 0 ? 'neg' : 'pos'}">${e.amount > 0 ? '+' : ''}${money(e.amount)}</td></tr>`).join('')}</tbody></table></details>`;
+  }).join('');
+  return `<div class="pw-label">BUCHUNGEN</div><div class="pw-calsw"><button data-ledger="month" class="${by === 'month' ? 'on' : ''}">Nach Monaten</button><button data-ledger="round" class="${by === 'round' ? 'on' : ''}">Nach Rennen</button></div>
+    ${html || '<div class="pw-hint">Noch keine Buchungen.</div>'}`;
 }
 
 // Kalender: Umschalter Liste/Monat und Monatsansicht
@@ -750,6 +790,7 @@ $('hqGo').addEventListener('click', async () => {
     return;
   }
   hqNotes = advanceTo(season, nx.date);
+  setBookingContext(season);
   if (nx.kind === 'sponsor') {
     // Sponsor-Termin: welcher Fahrer geht hin – oder absagen?
     const ev = m.events.find(e => e.id === nx.id);
@@ -781,8 +822,10 @@ $('hqBody').addEventListener('click', async e => {
   if (!b || !season || b.disabled) return;
   let err = null;
   const m = season.mgmt;
+  setBookingContext(season);
   if (b.dataset.go) { hqTab = b.dataset.go; hqHire = null; renderHQ(); $('hqBody').scrollTop = 0; return; }
   if (b.dataset.stab2) { seasonTab = b.dataset.stab2; renderHQ(); return; }
+  if (b.dataset.ledger) { ui.ledgerBy = b.dataset.ledger; renderHQ(); return; }
   if (b.dataset.calview) { ui.calView = b.dataset.calview; ui.calMonth = season.date.slice(0, 7); renderHQ(); return; }
   if (b.dataset.calmove) { const [y, mo] = ui.calMonth.split('-').map(Number); const d = new Date(Date.UTC(y, mo - 1 + Number(b.dataset.calmove), 1)); ui.calMonth = d.toISOString().slice(0, 7); renderHQ(); return; }
   if (b.dataset.hire) { hqHire = hqHire === b.dataset.hire ? null : b.dataset.hire; renderHQ(); return; }
@@ -1042,7 +1085,7 @@ function startRace() {
   $('startScreen').classList.add('hidden');
   $('resultScreen').classList.add('hidden');
   race.start('standing');
-  setSpeed(Math.max(4, settings.speed));
+  setSpeed(1);   // jede Session (Training, Qualifying, Rennen) beginnt mit 1×
   paused = false;
   renderSpeedBtns();
   setTab('wall');
@@ -1167,6 +1210,7 @@ function refreshUi() {
   checkNotices();
   renderWall();
   if (activeTab === 'circle') renderCircle();
+  if (weatherPanel.isOpen && weatherPanel.offset === 0) weatherPanel.drawRadar();
   if (!touching) {
     if (activeTab === 'timing') renderTiming($('timing'), race, { gapMode: settings.gapMode, selected: map.selected });
     if (settings.showTower) renderTower($('tower'), race, map.selected, settings.gapMode);
@@ -1296,7 +1340,8 @@ function renderWall() {
     tab.classList.toggle('on', car.id === ui.wallCar);
     const tmsg = openMessage(race, car);
     const tpos = car.retired ? 'OUT' : `P${st.indexOf(car) + 1}`;
-    tab.querySelector('span').innerHTML = `${tpos}${tmsg ? ' <i class="pw-dot">📻</i>' : ''}${car.redQueued && !car.redTyre ? ' <i class="pw-dot red">REIFEN?</i>' : ''}`;
+    const tyreTab = car.retired ? '' : ` · <i class="pw-tyre ${car.compound}">${car.compound}</i> ${car.tyreAge} Rd`;
+    tab.querySelector('span').innerHTML = `${tpos}${tyreTab}${tmsg ? ' <i class="pw-dot">📻</i>' : ''}${car.redQueued && !car.redTyre ? ' <i class="pw-dot red">REIFEN?</i>' : ''}`;
     // Rote Flagge: Reifenwahl in der Boxengasse
     const red = el.querySelector('[data-f="red"]');
     const redOn = Boolean(car.redQueued && race.neutral && race.neutral.type === 'red');
@@ -1599,7 +1644,7 @@ function renderSessionWall() {
     const i = st.indexOf(car);
     const tab = $('wall').querySelector(`[data-wtab="${car.id}"]`);
     tab.classList.toggle('on', car.id === ui.wallCar);
-    tab.querySelector('span').textContent = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? 'Garage' : 'Strecke'}`;
+    tab.querySelector('span').innerHTML = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? 'Garage' : `<i class="pw-tyre ${car.compound}">${car.compound}</i> ${car.tyreAge} Rd`}`;
     el.classList.toggle('out', car.retired);
     f('pos').textContent = `P${i + 1}`;
     const t = race.rankTime(car);
@@ -1852,7 +1897,7 @@ $('stratGo').addEventListener('click', () => {
 function showResults() {
   resultShown = true;
   const nk = nextKind(wk);
-  $('newRaceBtn').textContent = nk ? `Weiter: ${SESSION_NAME[nk]}` : 'Zur Startseite';
+  $('newRaceBtn').textContent = nk ? `Weiter: ${SESSION_NAME[nk]}` : wk.season ? 'Weiter' : 'Zur Startseite';
   $('endWkBtn').classList.toggle('hidden', !nk);
   if (race.isSession) { showSessionResults(); return; }
   const st = race.standings();
@@ -1874,7 +1919,9 @@ function showResults() {
   $('resultTitle').textContent = `🏁 ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
   $('resultBody').innerHTML = `<div class="pw-sum"><b>${esc(t.name)}</b>: ${mine.map(c => `${c.id} ${c.retired ? 'DNF' : c.dsq ? 'DSQ' : 'P' + (st.indexOf(c) + 1)}`).join(' · ')} · <b>${teamPts} Punkte</b></div>
     <table class="pw-res"><tbody>${rows}</tbody></table>
-    ${mine.map(c => `<div class="pw-hist"><b>${c.id}</b> ${histHtml(c)}</div>`).join('')}`;
+    ${mine.map(c => `<div class="pw-hist"><b>${c.id}</b> ${histHtml(c)}</div>`).join('')}
+    <div class="pw-label" style="margin-top:14px">PRESSESTIMMEN</div>
+    ${pressQuotes(race, teamsNow()).map(p => `<div class="pw-press"><b>${esc(p.outlet)}</b>„${esc(p.text)}“</div>`).join('')}`;
   $('resultTitle').textContent = `🏁 ${race.kind === 'sprint' ? 'Sprint' : 'Rennen'} · ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
   $('resultScreen').classList.remove('hidden');
 }
@@ -1914,6 +1961,7 @@ $('newRaceBtn').addEventListener('click', () => {
       recordWeekend(season, wk, DRIVERS);
       if (!season.mgmt) initManagement(season, TEAMS, DRIVERS);
       const last = season.results[season.results.length - 1];
+      const moneyBefore = season.mgmt.money;
       const notes = afterWeekend(season, TEAMS, DRIVERS, last, wk.used || {}, wk.moods || {});
       const after = teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1;
       notes.push(...careerAfterWeekend(season, TEAMS, season.mgmt.report.r.pts, expectedPoints(season.mgmt.board.target)));
@@ -1925,8 +1973,9 @@ $('newRaceBtn').addEventListener('click', () => {
       saveSeason(season);
       newRace();
       hqTab = 'report';
-      showHQ([`<b>${esc(TEAM_BY_ID[season.teamId].name)}</b>: +${(season.teamPts[season.teamId] || 0) - pts0} Punkte · Teamwertung P${after}${after < before ? ' ▲' : after > before ? ' ▼' : ''}`,
-        seasonOver(season) ? '<b>Die Saison ist beendet!</b>' : `Nächstes Rennen: <b>${esc(TRACKS[currentEntry(season).track].grandPrix.replace('Großer Preis ', 'GP '))}</b>`, ...notes]);
+      showBookings(moneyBefore, season.mgmt.report.log, season.mgmt.money);
+      pendingHQ = [`<b>${esc(TEAM_BY_ID[season.teamId].name)}</b>: +${(season.teamPts[season.teamId] || 0) - pts0} Punkte · Teamwertung P${after}${after < before ? ' ▲' : after > before ? ' ▼' : ''}`,
+        seasonOver(season) ? '<b>Die Saison ist beendet!</b>' : `Nächstes Rennen: <b>${esc(TRACKS[currentEntry(season).track].grandPrix.replace('Großer Preis ', 'GP '))}</b>`, ...notes];
       return;
     }
     newRace();
