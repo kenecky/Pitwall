@@ -576,6 +576,7 @@ export class TrackMap {
         continue;
       }
       if (car.parked) continue;   // nach der Auslaufrunde in der Box abgestellt
+      if (race.isSession && car.elimSeg !== null && car.elimSeg !== undefined) continue;   // Pit Wall: im Qualifying ausgeschieden
       const d = renderD.get(car) ?? car.d;
       const [x, y] = this.pos(d, this.carLateral(race, car));
       const sel = this.selected === car.id;

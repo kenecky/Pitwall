@@ -41,7 +41,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 14;
+export const VERSION = 15;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -1545,7 +1545,7 @@ function trafficForecast(car) {
   return { level: score < 2.5 ? 'niedrig' : score < 5 ? 'mittel' : 'hoch', cls: score < 2.5 ? 'free' : score < 5 ? 'mid' : 'traffic', outlap, soon, onTrack };
 }
 function sessStatus(car) {
-  if (car.retired) return 'Ausgeschieden (Defekt/Unfall)';
+  if (car.retired) return `AUSFALL – ${car.dnf || 'Defekt/Unfall'}`;
   if (car.elimSeg !== null && car.elimSeg !== undefined) return `Ausgeschieden in ${race.info.segments[car.elimSeg].id}`;
   if (car.inGarage) return 'In der Garage';
   const p = car.prog.phase;
@@ -1599,7 +1599,8 @@ function renderSessionWall() {
     const i = st.indexOf(car);
     const tab = $('wall').querySelector(`[data-wtab="${car.id}"]`);
     tab.classList.toggle('on', car.id === ui.wallCar);
-    tab.querySelector('span').textContent = `P${i + 1} · ${car.inGarage ? 'Garage' : 'Strecke'}`;
+    tab.querySelector('span').textContent = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? 'Garage' : 'Strecke'}`;
+    el.classList.toggle('out', car.retired);
     f('pos').textContent = `P${i + 1}`;
     const t = race.rankTime(car);
     f('sub').textContent = t ? `Bestzeit ${formatLap(t)}` : 'Noch keine Zeit';
@@ -1682,6 +1683,13 @@ function renderSessionWall() {
         f('notes').dataset.sig = nsig;
         f('notes').innerHTML = notes.length ? notes.map(n => `<div>„${esc(n.text)}“<small>Flügel ${n.setup.wing} · Balance ${n.setup.bal} · Federung ${n.setup.stiff} · ${n.n} Rd, beste ${formatLap(n.best)}</small></div>`).join('') : '<div>Noch keine Ausfahrt.</div>';
       }
+    }
+    // Ausgefallen: nichts mehr einstellbar
+    if (car.retired) {
+      for (const b of el.querySelectorAll('button')) b.disabled = true;
+      f('status').className = 'pw-status bad';
+      f('traffic').textContent = '';
+      f('hint').textContent = 'Das Auto ist ausgefallen und kann in dieser Session nicht mehr fahren.';
     }
     // Kontingent
     f('alloc').innerHTML = Object.entries(sum).map(([k, v]) => `<span><i class="pw-tyre ${k}">${k}</i> ${v.fresh} neu${v.used.length ? ` · ${v.used.length} gebr.` : ''}</span>`).join('') + (wk.returned[car.id] ? `<span>${wk.returned[car.id]} Sätze nach dem Training zurückgegeben</span>` : '');

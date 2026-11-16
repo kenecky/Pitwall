@@ -202,6 +202,39 @@ export class Session extends Race {
     else car.prog.runs.splice(car.prog.runIdx, Infinity);
   }
 
+  // Gummi baut sich mit jedem Auto auf der Strecke auf (über die ganze Session), Regen baut ihn ab
+  rubberStep() {
+    if (this.rubber === undefined) this.rubber = 0;
+    const total = this.info.segments.reduce((sum, x) => sum + x.dur, 0);
+    const onTrack = this.cars.filter(c => !c.inGarage && !c.retired).length;
+    const rain = this.weather.rain || 0, wet = this.weather.wetness || 0;
+    if (wet > 0.15 || rain > 0.1) this.rubber = Math.max(0, this.rubber - DT * (0.0015 + rain * 0.004));
+    else this.rubber = Math.min(1, this.rubber + DT * (0.15 + onTrack / 22) / (total * 0.55));
+  }
+
+  // KI-Entscheidung vor dem letzten Run in Q1/Q2: Zeit sicher genug? Top-Teams bleiben öfter drin – und manchmal
+  // ist ein Team zu sicher und fliegt doch noch raus.
+  skipLastRun(c) {
+    const seg = this.segment;
+    if (!seg.keep || this.kind === 'fp') return false;
+    const mine = c.segBest && c.segBest[this.segIdx];
+    if (!mine) return false;
+    const rk = this.segmentRanking();
+    const pos = rk.indexOf(c) + 1;
+    const cut = rk[seg.keep - 1];
+    const cutT = cut && cut.segBest && cut.segBest[this.segIdx];
+    const timed = rk.filter(x => x.segBest && x.segBest[this.segIdx] !== undefined).length;
+    // Polster: Abstand zur aktuellen Grenze, abzüglich der erwarteten Verbesserung der anderen (Streckenentwicklung)
+    const margin = cutT && timed >= seg.keep ? cutT - mine - 0.35 : (seg.keep - pos) * 0.12 - 0.2;
+    const top = c.team.pace >= 88;
+    let p = margin > 0.6 ? 0.9 : margin > 0.3 ? 0.6 : margin > 0.1 ? 0.3 : 0.04;
+    if (top) p = Math.min(0.97, p + 0.15);
+    if (pos > seg.keep - 2) p *= 0.3;
+    const skip = this.rng.chance(p);
+    if (skip) this.emit('info', `${c.id} bleibt in der Box – ${c.team.name} hält die Zeit für sicher genug (P${pos}).`, { cars: [c.id] });
+    return skip;
+  }
+
   // Pit Wall: drei Zeitsektoren (je ein Drittel der Runde). Auf schnellen Runden wird jeder Sektor bewertet:
   // 'p' violett = absolute Bestzeit, 'g' grün = persönliche Bestzeit, 'y' gelb = keine Verbesserung.
   sectorCheck() {
@@ -282,6 +315,8 @@ export class Session extends Race {
         for (const c of this.cars) {
           const run = c.prog.runs[c.prog.runIdx];
           if (!c.inGarage || c.retired || !run || this.clock < run.depart) continue;
+          // KI im Qualifying: Ist die Zeit sicher genug, bleibt das Auto für den letzten Run in der Box
+          if (!c.player && c.prog.runIdx > 0 && this.skipLastRun(c)) { c.prog.runs.splice(c.prog.runIdx); continue; }
           c.prog.runIdx++;
           c.prog.current = run;
           c.stopTimer = 0.001;   // → leaveGarage über finishStop
@@ -289,6 +324,7 @@ export class Session extends Race {
       }
     }
     super.step();
+    this.rubberStep();
     this.trafficCheck();
     this.sectorCheck();
     const n = this.neutral;
@@ -311,7 +347,8 @@ export class Session extends Race {
     const base = super.lapTarget(car);
     // Rennsprit-Anteil aus der Basis entfernen, Session-Sprit und Streckenentwicklung einrechnen
     const progress = Math.min(1, Math.max(0, car.d / (this.laps * this.track.L)));
-    const evolution = -0.5 * Math.min(1, this.time / 2400);
+    // Streckenentwicklung: Gummi auf der Strecke (Q1 → Q3 immer schneller, Regen wäscht ihn ab)
+    const evolution = -(this.kind === 'fp' ? 0.6 : 0.9) * (this.rubber || 0);
     return base - 2.2 * (1 - progress) + 2.2 * (car.fuel ?? 0.2) + evolution + (car.dirty ? 0.4 : 0);
   }
 

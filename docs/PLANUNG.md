@@ -329,3 +329,12 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - **Wetterübersicht** (Wettersymbol in der Kopfleiste) statt Radar: aktuelle Bedingungen und Vorhersage je Session des
   Wochenendes (trocken / Regen von Beginn an / Schauer ab Minute x bis y, Stärke). Aus denselben Wetterdaten wie die Simulation.
 - **Freies Training 30 Minuten** (alle Dauer-Stufen) für mehr Zeit bei der Setup-Suche.
+
+### v15 – Qualifying-Taktik der KI, Streckenentwicklung, Ausfälle in Sessions
+- **KI im Qualifying**: Vor dem letzten Run in Q1/Q2 schätzt jedes KI-Team sein Polster zur Ausscheidungsgrenze (abzüglich
+  ~0,35 s erwarteter Verbesserung der anderen). Großes Polster → meist in der Box bleiben (Top-Teams noch öfter); manchmal
+  ist ein Team zu sicher und fliegt doch raus. Meldung im Log („… bleibt in der Box“). In Q3 fahren alle.
+- **Streckenentwicklung**: Gummi baut sich über die ganze Session auf (mehr Autos auf der Strecke = schneller), Qualifying bis
+  ~0,9 s, Training bis ~0,6 s schneller; Regen/Nässe baut ihn wieder ab. Ersetzt die bisherige feste Zeitkurve.
+- **Ausfall in Training/Qualifying**: Fahrer-Reiter zeigt „AUSFALL“ mit Grund, alle Knöpfe gesperrt.
+- **Karte**: Im Qualifying ausgeschiedene Autos werden nicht mehr gezeichnet (weder Strecke noch Box).
