@@ -20,7 +20,9 @@ import { WeatherPanel } from './ui/weatherPanel.js';
 import { weatherLabel } from './sim/weather.js';
 import { distanceFor } from './sim/length.js';
 import { unservedSecs } from './control/stewards.js';
-import { loadSettings, saveSettings } from './storage.js';
+import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, loadGame, clearGame } from './storage.js';
+import { serializeRace, restoreRace } from './sim/persist.js';
+import { newSeason, currentEntry, seasonOver, weekendParts, recordWeekend, driverStandings, teamStandings, finishOf, SPRINT_TRACKS } from './team/season.js';
 import {
   PACE, PACE_ORDER, ERS, ERS_ORDER, STRATEGISTS, playerCars, setPace, setErs, callBox, cancelBox, tooLateForBox, tyreLife, adviceFor,
   lapsLeftOnTyres, nextStop, stopDue, shiftStop, dropStop, setStopCompound, addStop, setTeamOrder, swapCars, teamStep,
@@ -32,7 +34,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback } from './team/setup.js';
 
-export const VERSION = 5;
+export const VERSION = 6;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -173,10 +175,20 @@ const ui = { sel: {}, built: null, lastOwnEv: 0 };
 // Neues Rennwochenende (Startseite)
 let wk = null;
 const SESSION_KINDS = new Set(['fp', 'quali', 'sq']);
+let season = loadSeason();
+let savedGame = null;     // gespeichertes Wochenende (zum Fortsetzen)
+const isSeason = () => settings.mode === 'season';
+// Eigenes Team: in der Saison fest, im Einzelrennen frei wählbar
+const playerTeamId = () => (isSeason() && season ? season.teamId : settings.teamId);
+
 function newRace(seed = randomSeed()) {
-  track = getTrack(settings.trackId);
-  const parts = settings.parts || ['fp', 'quali'];
-  wk = createWeekend({ parts, seed, trackId: track.def.id, carIds: DRIVERS.filter(d => d.team === settings.teamId).map(d => d.id) });
+  let parts = settings.parts || ['fp', 'quali'];
+  let trackId = settings.trackId;
+  const entry = isSeason() && season ? currentEntry(season) : null;
+  if (entry) { trackId = entry.track; parts = weekendParts(trackId); }
+  track = getTrack(trackId);
+  wk = createWeekend({ parts, seed, trackId: track.def.id, carIds: DRIVERS.filter(d => d.team === playerTeamId()).map(d => d.id) });
+  if (entry) { wk.season = true; wk.penalties.race = { ...(season.gridPen || {}) }; }
   prepareSession();
   $('seedInfo').textContent = `Wochenende #${seed}`;
   $('seedInput').value = '';
@@ -193,8 +205,8 @@ function prepareSession() {
   const kind = currentKind(wk);
   const isS = SESSION_KINDS.has(kind);
   const opts = {
-    track, teams: TEAMS, drivers: DRIVERS, seed: wk.seed + wk.idx * 101, weather: settings.weatherMode, kind,
-    length: settings.length, difficulty: 'medium', playerTeam: settings.teamId,
+    track, teams: TEAMS, drivers: DRIVERS, seed: wk.seed + wk.idx * 101, weather: wk.season ? 'random' : settings.weatherMode, kind,
+    length: settings.length, difficulty: 'medium', playerTeam: playerTeamId(),
   };
   if (!isS) {
     const { laps, full } = distanceFor(track, kind, settings.length);
@@ -203,8 +215,16 @@ function prepareSession() {
   map.setTrack(track);
   race = isS ? new Session(opts) : new Race(opts);
   applyWeekend(race, wk);
+  hookRace();
+  resetUi();
+}
+
+// Rückrufe der Simulation an Pit Wall (nach Aufbau und nach dem Laden)
+function hookRace() {
   race.trackSets = () => { for (const c of playerCars(race)) trackSetWear(race, c); };
   race.onPlayerGarage = onGarage;
+}
+function resetUi() {
   paused = true;
   acc = 0;
   resultShown = false;
@@ -236,6 +256,130 @@ function onGarage(car) {
   car.runLaps = [];
 }
 
+// ---------- Speichern und Fortsetzen ----------
+// Gespeichert wird das ganze Wochenende (Setup, Reifensätze, Ergebnisse) und die laufende Session.
+let lastSave = 0;
+function autosave() {
+  if (!race || !wk) return;
+  const started = race.phase !== 'pre';
+  let data;
+  try {
+    data = {
+      v: 1, mode: wk.season ? 'season' : 'single', savedAt: Date.now(), trackId: track.def.id, teamId: playerTeamId(),
+      length: settings.length, weather: settings.weatherMode,
+      wk: JSON.parse(JSON.stringify(wk)),
+      race: started ? serializeRace(race) : null,
+      kind: currentKind(wk), strategyDone: Boolean(race.strategyDone),
+    };
+  } catch { return; }
+  savedGame = data;
+  saveGame(data);
+}
+
+async function resumeGame() {
+  const d = savedGame;
+  if (!d) return;
+  if (d.mode === 'season' && (!season || season.teamId !== d.teamId)) { toast('Spielstand passt nicht zur Saison'); return; }
+  settings.mode = d.mode;
+  settings.length = d.length;
+  settings.weatherMode = d.weather;
+  if (d.mode === 'single') { settings.teamId = d.teamId; settings.trackId = d.trackId; }
+  saveSettings(settings);
+  track = getTrack(d.trackId);
+  wk = d.wk;
+  let r = null;
+  if (d.race) r = restoreRace({ track, teams: TEAMS, drivers: DRIVERS, data: d.race });
+  if (r) {
+    map.setTrack(track);
+    race = r;
+    // Reifensätze wieder mit dem Wochenende verknüpfen, Funk ohne Antwort-Wirkung verfällt
+    for (const c of race.cars) {
+      if (!c.player) continue;
+      const find = s => (s ? wk.sets[c.id].find(x => x.id === s.id) || null : null);
+      c.curSet = find(c.curSet);
+      c.nextSet = find(c.nextSet);
+    }
+    if (race.pwRadio) for (const m of race.pwRadio.msgs) if (!m.done) { m.done = true; m.expired = true; }
+    applyWeekend(race, wk);
+    hookRace();
+    resetUi();
+    race.strategyDone = d.strategyDone;
+    ui.noticeSeen = (race.rcNotices || []).length;
+    ui.lastMsg = race.pwRadio ? race.pwRadio.seq : 0;
+    $('startScreen').classList.add('hidden');
+    feed.update(race.events.filter(ownRadio));
+    renderSpeedBtns();
+    setTab('wall');
+    if (race.phase === 'finished') showResults();
+    else toast('Fortgesetzt – zum Weiterfahren ▶ drücken', 3000);
+  } else {
+    prepareSession();
+    startRace();
+  }
+}
+function renderResume() {
+  const box = $('resumeBox');
+  const d = savedGame;
+  if (!d) { box.innerHTML = ''; return; }
+  const t = TRACKS[d.trackId];
+  const mins = Math.round((Date.now() - d.savedAt) / 60000);
+  const when = mins < 1 ? 'gerade eben' : mins < 60 ? `vor ${mins} Min.` : mins < 1440 ? `vor ${Math.round(mins / 60)} Std.` : `vor ${Math.round(mins / 1440)} Tagen`;
+  box.innerHTML = `<div class="pw-resume st-card"><div class="setup-label">GESPEICHERT · ${when}</div>
+    <div><b>${d.mode === 'season' ? 'Saison · ' : ''}${esc(t ? t.grandPrix.replace('Großer Preis ', 'GP ') : d.trackId)}</b> · ${esc(SESSION_NAME[d.kind] || '')} · ${esc(TEAM_BY_ID[d.teamId] ? TEAM_BY_ID[d.teamId].name : '')}</div>
+    <div class="pw-rbtns"><button id="resumeBtn" class="primary-btn">Fortsetzen</button><button id="dropSaveBtn" class="secondary-btn">Verwerfen</button></div></div>`;
+  $('resumeBtn').onclick = () => { sound.unlock(); resumeGame(); };
+  $('dropSaveBtn').onclick = () => {
+    if (!confirm('Gespeichertes Wochenende verwerfen?')) return;
+    savedGame = null; clearGame(); renderResume();
+  };
+}
+
+// ---------- Saison-Übersicht ----------
+let seasonTab = 'drivers';
+function showSeason(notes = []) {
+  if (!season) return;
+  $('seasonNotes').innerHTML = notes.map(n => `<div class="pw-sum">${n}</div>`).join('');
+  renderSeasonTab();
+  $('seasonScreen').classList.remove('hidden');
+}
+function renderSeasonTab() {
+  for (const b of document.querySelectorAll('#seasonScreen .stab')) b.classList.toggle('active', b.dataset.stab === seasonTab);
+  let html = '';
+  if (seasonTab === 'drivers') {
+    html = `<table class="pw-res"><tbody>${driverStandings(season, DRIVERS).map((x, i) => `<tr class="${x.d.team === season.teamId ? 'mine' : ''}"><td>${i + 1}</td><td class="tc" style="background:${TEAM_BY_ID[x.d.team].color}"></td><td>${esc(x.d.first[0])}. ${esc(x.d.last)}</td><td>${esc(TEAM_BY_ID[x.d.team].short)}</td><td style="text-align:right">${x.wins ? `${x.wins}× 🏆` : ''}</td><td style="text-align:right"><b>${x.pts}</b></td></tr>`).join('')}</tbody></table>`;
+  } else if (seasonTab === 'teams') {
+    html = `<table class="pw-res"><tbody>${teamStandings(season, TEAMS).map((x, i) => `<tr class="${x.t.id === season.teamId ? 'mine' : ''}"><td>${i + 1}</td><td class="tc" style="background:${x.t.color}"></td><td>${esc(x.t.name)}</td><td style="text-align:right"><b>${x.pts}</b></td></tr>`).join('')}</tbody></table>`;
+  } else {
+    const ids = DRIVERS.filter(d => d.team === season.teamId).map(d => d.id);
+    html = `<table class="pw-res"><tbody>${SEASON_2026.map((e, i) => {
+      const res = season.results.find(r => r.round === e.round);
+      const t = TRACKS[e.track];
+      const cell = res ? ids.map(id => `${id} ${finishOf(res.race, id) || '–'}${res.sprint ? ` <small>(S ${finishOf(res.sprint, id) || '–'})</small>` : ''}`).join(' · ') : i === season.round ? '<b>als Nächstes</b>' : new Date(e.date).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
+      return `<tr class="${i === season.round ? 'mine' : ''}"><td>${e.round}</td><td>${esc(t.country)}${SPRINT_TRACKS.includes(e.track) ? ' <small>Sprint</small>' : ''}</td><td>${res && res.race[0] ? `🏆 ${res.race[0].id}` : ''}</td><td>${cell}</td></tr>`;
+    }).join('')}</tbody></table>`;
+  }
+  $('seasonBody').innerHTML = html;
+}
+for (const b of document.querySelectorAll('#seasonScreen .stab')) b.addEventListener('click', () => { seasonTab = b.dataset.stab; renderSeasonTab(); });
+$('seasonCloseBtn').addEventListener('click', () => $('seasonScreen').classList.add('hidden'));
+$('seasonBtn').addEventListener('click', () => showSeason());
+$('seasonResetBtn').addEventListener('click', () => {
+  if (!confirm('Saison wirklich neu starten? Der bisherige Saisonstand geht verloren.')) return;
+  season = null;
+  clearSeason();
+  if (savedGame && savedGame.mode === 'season') { savedGame = null; clearGame(); }
+  $('seasonScreen').classList.add('hidden');
+  newRace();
+});
+function setMode(mode) {
+  if (settings.mode === mode) return;
+  settings.mode = mode;
+  saveSettings(settings);
+  newRace();
+}
+$('modeSingle').addEventListener('click', () => setMode('single'));
+$('modeSeason').addEventListener('click', () => setMode('season'));
+
 // ---------- Startseite ----------
 const SEGS = {
   weatherSeg: { key: 'weatherMode', items: [['random', '🎲', 'Zufällig'], ['dry', '☀️', 'Trocken'], ['rain', '🌧', 'Regen'], ['changeable', '🌦', 'Wechselhaft']] },
@@ -259,9 +403,21 @@ for (const [id, { key }] of Object.entries(SEGS)) {
 }
 
 function renderStart() {
+  const sea = isSeason();
+  const running = sea && season;
+  const entry = running ? currentEntry(season) : null;
+  $('modeSingle').classList.toggle('active', !sea);
+  $('modeSeason').classList.toggle('active', sea);
+  $('seasonBtn').classList.toggle('hidden', !running);
+  $('gpList').classList.toggle('hidden', sea);
+  $('sessionChecks').classList.toggle('hidden', sea);
+  $('weatherSeg').classList.toggle('hidden', sea);
+  $('wxSeasonNote').classList.toggle('hidden', !sea);
+  $('teamList').classList.toggle('hidden', Boolean(running));
+  renderResume();
   // Teams
-  $('teamList').innerHTML = TEAMS.map(t => `<button class="pw-team${t.id === settings.teamId ? ' on' : ''}" data-team="${t.id}" role="option"><i style="background:${t.color}"></i>${esc(t.name)}</button>`).join('');
-  const t = TEAM_BY_ID[settings.teamId];
+  $('teamList').innerHTML = TEAMS.map(t => `<button class="pw-team${t.id === playerTeamId() ? ' on' : ''}" data-team="${t.id}" role="option"><i style="background:${t.color}"></i>${esc(t.name)}</button>`).join('');
+  const t = TEAM_BY_ID[playerTeamId()];
   const drv = DRIVERS.filter(d => d.team === t.id);
   const bar = (label, v) => `<span>${label}</span><i><b style="width:${v}%"></b></i><span>${v}</span>`;
   $('teamInfo').innerHTML = `<b>${esc(t.name)}</b> · ${drv.map(d => `${esc(d.first)} ${esc(d.last)} (#${d.number})`).join(' & ')}
@@ -276,13 +432,16 @@ function renderStart() {
   }
   for (const b of list.children) b.classList.toggle('on', b.dataset.track === settings.trackId);
   const def = track.def;
-  $('evRound').textContent = '';
-  $('gpInfo').innerHTML = `<b>${def.grandPrix.replace('Großer Preis ', 'GP ')}</b><div><span>${race.laps}</span> Runden</div><div><span>${(def.lengthM / 1000).toFixed(3).replace('.', ',')}</span> km</div>`;
+  $('evRound').textContent = entry ? `Saison ${season.year} · Rennen ${entry.round}/${SEASON_2026.length} · ${new Date(entry.date).toLocaleDateString('de-DE')}`
+    : running ? `Saison ${season.year} beendet` : sea ? 'Neue Saison – Team wählen' : '';
+  $('gpInfo').innerHTML = `<b>${def.grandPrix.replace('Großer Preis ', 'GP ')}</b><div><span>${distanceFor(track, 'race', settings.length).laps}</span> Runden</div><div><span>${(def.lengthM / 1000).toFixed(3).replace('.', ',')}</span> km</div>`;
   renderSegs();
   const parts = settings.parts || ['fp', 'quali'];
   for (const cb of $('sessionChecks').querySelectorAll('input')) cb.checked = cb.value === 'race' || parts.includes(cb.value);
   $('weekendSteps').innerHTML = wk.seq.map((k, i) => `<span class="wstep${i < wk.idx ? ' done' : i === wk.idx ? ' now' : ''}">${SESSION_SHORT[k]}</span>`).join('<span class="wsep">›</span>');
-  $('startBtn').textContent = wk.seq.length > 1 ? `Wochenende starten · ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
+  $('startBtn').textContent = sea && !season ? 'Saison starten' : running && !entry ? 'Saison beendet' : wk.seq.length > 1 ? `Wochenende starten · ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
+  $('startBtn').disabled = Boolean(running && !entry);
+  if (running) $('teamInfo').insertAdjacentHTML('afterbegin', `<div class="pw-sum">Saison mit <b>${esc(t.name)}</b>${season.results.length ? ` · Teamwertung P${teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1} · ${season.teamPts[season.teamId] || 0} Punkte` : ' · noch kein Rennen gefahren'}</div>`);
   const wx = race.weather;
   $('forecast').textContent = !wx.showers.length ? '☀️ Vorhersage: trocken'
     : wx.wetness > 0.2 ? `🌧 Vorhersage: Regen zum Start${wx.showers.length > 1 ? ', später weitere Schauer' : ''}`
@@ -291,7 +450,7 @@ function renderStart() {
 }
 $('teamList').addEventListener('click', e => {
   const b = e.target.closest('[data-team]');
-  if (!b || b.dataset.team === settings.teamId) return;
+  if (!b || b.dataset.team === settings.teamId || (isSeason() && season)) return;
   settings.teamId = b.dataset.team;
   saveSettings(settings);
   newRace(race.seed);
@@ -454,8 +613,9 @@ function frame(now) {
       refreshUi();
       const added = feed.update(race.events.filter(ownRadio));
       if (added && activeTab !== 'feed') { unread += added; updateBadge(); }
-      if (race.phase === 'finished' && !resultShown) showResults();
+      if (race.phase === 'finished' && !resultShown) { showResults(); autosave(); }
     }
+    if (!paused && race.phase !== 'pre' && race.phase !== 'finished' && now - lastSave > 10000) { lastSave = now; autosave(); }
   }
   requestAnimationFrame(frame);
 }
@@ -1189,11 +1349,35 @@ function showSessionResults() {
 }
 $('newRaceBtn').addEventListener('click', () => {
   finishSession(wk, race);
-  if (wk.idx >= wk.seq.length) { newRace(); return; }
+  if (wk.idx >= wk.seq.length) {
+    // Wochenende vorbei: in der Saison Punkte übernehmen, Spielstand löschen
+    savedGame = null;
+    clearGame();
+    if (wk.season && season) {
+      const before = teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1;
+      const pts0 = season.teamPts[season.teamId] || 0;
+      recordWeekend(season, wk, DRIVERS);
+      saveSeason(season);
+      const after = teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1;
+      newRace();
+      seasonTab = 'teams';
+      showSeason([`<b>${esc(TEAM_BY_ID[season.teamId].name)}</b>: +${(season.teamPts[season.teamId] || 0) - pts0} Punkte · Teamwertung P${after}${after < before ? ' ▲' : after > before ? ' ▼' : ''}`,
+        seasonOver(season) ? '<b>Die Saison ist beendet!</b>' : `Nächstes Rennen: <b>${esc(TRACKS[currentEntry(season).track].grandPrix.replace('Großer Preis ', 'GP '))}</b>`]);
+      return;
+    }
+    newRace();
+    return;
+  }
   prepareSession();
+  autosave();
   startRace();
 });
-$('endWkBtn').addEventListener('click', () => newRace());
+$('endWkBtn').addEventListener('click', () => {
+  if (wk.season) { toast('In der Saison wird jedes Wochenende zu Ende gefahren.'); return; }
+  savedGame = null;
+  clearGame();
+  newRace();
+});
 
 // ---------- Bedienung ----------
 function setTab(tab) {
@@ -1270,11 +1454,31 @@ $('pauseBtn').addEventListener('click', () => {
   paused = !paused;
   acc = 0;
   renderSpeedBtns();
+  if (paused) autosave();
 });
-$('startBtn').addEventListener('click', () => { sound.unlock(); startRace(); });
+$('startBtn').addEventListener('click', () => {
+  sound.unlock();
+  if (savedGame && !confirm('Es gibt ein gespeichertes Wochenende. Neu beginnen und den Spielstand überschreiben?')) return;
+  if (isSeason() && !season) {
+    season = newSeason(settings.teamId);
+    saveSeason(season);
+    newRace();
+  }
+  savedGame = null;
+  clearGame();
+  startRace();
+});
 $('menuBtn').addEventListener('click', () => { $('optionsScreen').classList.remove('hidden'); });
 $('optCloseBtn').addEventListener('click', () => $('optionsScreen').classList.add('hidden'));
-$('optHomeBtn').addEventListener('click', () => { $('optionsScreen').classList.add('hidden'); newRace(); });
+$('optHomeBtn').addEventListener('click', () => {
+  $('optionsScreen').classList.add('hidden');
+  autosave();
+  const keep = savedGame;
+  newRace();
+  savedGame = keep;
+  renderResume();
+  toast('Gespeichert – auf der Startseite fortsetzen');
+});
 $('soundToggle').checked = settings.sound !== false;
 $('soundToggle').addEventListener('change', e => {
   settings.sound = e.target.checked;
@@ -1322,7 +1526,10 @@ async function requestWakeLock() {
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && race && !paused) requestWakeLock();
-  if (document.visibilityState === 'hidden' && race && race.phase !== 'pre' && race.phase !== 'finished') { paused = true; renderSpeedBtns(); }
+  if (document.visibilityState === 'hidden' && race && race.phase !== 'pre') {
+    if (race.phase !== 'finished') { paused = true; renderSpeedBtns(); }
+    autosave();
+  }
 });
 function vibrate(pattern) {
   if (settings.vibrate === false || !navigator.vibrate) return;
@@ -1365,6 +1572,7 @@ function vibrate(pattern) {
 // ---------- Start ----------
 bootStep(70, 'Pit Wall wird eingerichtet …');
 newRace();
+loadGame().then(d => { if (d && d.v === 1) { savedGame = d; renderResume(); } }).catch(() => {});
 bootStep(92, 'Startseite wird gezeichnet …');
 requestAnimationFrame(frame);
 bootDone();

@@ -100,6 +100,7 @@ export function finishSession(wk, race) {
   // Startplatzstrafen aus der Session für das nächste Rennen
   const target = kind === 'sq' ? 'sprint' : kind === 'sprint' || kind === 'quali' || kind === 'fp' ? 'race' : null;
   if (target) for (const p of race.carryOver || []) wk.penalties[target][p.carId] = (wk.penalties[target][p.carId] || 0) + p.places;
+  if (kind === 'race') wk.carry = (race.carryOver || []).map(p => ({ carId: p.carId, places: p.places }));   // fürs nächste Wochenende
   if (kind !== 'fp') wk.setupLocked = true;   // Parc fermé ab dem ersten Qualifying
   wk.idx++;
 }

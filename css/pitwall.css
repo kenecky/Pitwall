@@ -1,5 +1,12 @@
 /* Pit Wall: Ergänzungen zum übernommenen Race-Control-Stil (style.css) */
 
+/* v6: Fortsetzen, Saison */
+.pw-resume { margin-bottom: 10px; border: 2px solid #facc15 !important; }
+.pw-resume > div:nth-child(2) { margin-top: 4px; font-size: 13px; color: #e6e9ef; }
+.pw-rbtns { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 10px; }
+.pw-res small { color: #8a94a7; }
+#seasonBody { max-height: 58vh; overflow-y: auto; margin-bottom: 12px; }
+
 /* Unterer Bereich wieder sichtbar: Pit Wall / Zeiten / Log */
 #app .tabs { display: grid; grid-template-columns: repeat(4, 1fr); }
 #app .panels { display: block; }

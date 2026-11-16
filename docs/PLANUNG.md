@@ -43,7 +43,7 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - [x] **M3 – Teamfunk** (v3): Fahrer melden sich (Reifen, Wetter, Schäden, Verkehr, Beschwerden), Antwort per Schnellauswahl, Stimmung
 - [x] **M4 – Rennwochenende** (v5): Setup im Training (Flügel, Balance, Federung, Rückmeldung), Quali-Runs timen (Verkehr),
       Reifen-Kontingent, Sprint
-- [ ] **M5 – Saison**: Kalender, Speichern/Fortsetzen, Team- und Fahrerwertung
+- [x] **M5 – Saison** (v6): Kalender, Speichern/Fortsetzen, Team- und Fahrerwertung
 - [ ] **M6 – Management**: Budget mit Obergrenze, Entwicklung Aero/Motor/Zuverlässigkeit, Ersatzteile und Schäden,
       Personal (Boxencrew, Ingenieure), Fahrerverträge und Stimmung, Sponsorenziele, Vorstandsziele, Ruf
 - [ ] **M7 – Karriere**: Teamwechsel, Angebote anderer Teams (wie im Fußballmanager)
@@ -160,3 +160,21 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - **Sprint**: eigene Strategie (Soft/Medium/Hard ohne Stopp), Punkte im Ergebnis wie Rennen (Wertung kommt mit M5)
 - KI-Rennleitung in Sessions: Flaggen, rote Flagge bei schweren Unfällen, Fortsetzung oder Abbruch, Kommissare
 - Tests: `node tests/weekend.mjs [strecke] [sprint]`
+
+### v6 – M5 Saison, Speichern und Fortsetzen
+- **Saison 2026** (`js/team/season.js`): Startseite Einzelrennen | Saison 2026. Team wird beim Saisonstart gewählt und
+  bleibt fest. 24 Rennen in Kalender-Reihenfolge; Format je Strecke: Sprint-Wochenenden (Shanghai, Miami, Montreal,
+  Silverstone, Zandvoort, Singapur) mit FP → SQ → Sprint → Quali → Rennen, sonst FP → Quali → Rennen. Wetter zufällig
+  (Regenwahrscheinlichkeit der Strecke). Wochenenden müssen zu Ende gefahren werden.
+- **Punkte**: Rennen 25-18-15-12-10-8-6-4-2-1, Sprint 8-7-6-5-4-3-2-1 (keine Punkte bei DNF/DSQ). Startplatzstrafen aus dem
+  Rennen gelten beim nächsten Wochenende.
+- **Saison-Übersicht** (🏆): Fahrer- und Teamwertung (eigenes Team markiert, Siege), Kalender mit Ergebnissen der eigenen
+  Fahrer (Rennen und Sprint) und Sieger. Nach jedem Wochenende: Punkte des Teams und Veränderung in der Teamwertung.
+  „Saison neu starten“ mit Rückfrage.
+- **Speichern**: ganzes Wochenende (Setup, Rückmeldungen, Reifensätze, Startaufstellungen, Ergebnisse) und die laufende
+  Session/das laufende Rennen – alle 10 s, bei Pause, beim Verlassen der App, nach jeder Session und über
+  ☰ „Speichern · zur Startseite“. IndexedDB `pw-db` (Store `saves`), Fallback localStorage `pw-save-v1`;
+  Saison in localStorage `pw-season-v1`. Nichts außerhalb des `pw-`-Präfixes.
+- **Fortsetzen** auf der Startseite (Strecke, Session, Team, wann gespeichert) oder Verwerfen (mit Rückfrage). Ein neues
+  Wochenende fragt vor dem Überschreiben. Beim Laden werden Reifensätze wieder verknüpft; offene Funkmeldungen verfallen.
+- Test: `node tests/season.mjs` (zwei Wochenenden inkl. Sprint, Speichern/Laden mitten im Rennen, Wertung)

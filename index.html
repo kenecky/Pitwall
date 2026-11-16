@@ -120,7 +120,7 @@
       <label class="switch-row"><input id="soundToggle" type="checkbox"><span>Ton (Motoren, Startampel, Funk, Musik)</span></label>
       <label class="switch-row"><input id="vibrateToggle" type="checkbox"><span>Vibration bei Funk und Neutralisierungen</span></label>
       <div class="opt-actions">
-        <button id="optHomeBtn" class="secondary-btn">Rennen abbrechen · Startseite</button>
+        <button id="optHomeBtn" class="secondary-btn">Speichern · zur Startseite</button>
         <button id="optCloseBtn" class="primary-btn">Weiter</button>
       </div>
     </div>
@@ -136,7 +136,13 @@
           <div class="brand-sub">Teamchef · Formel 1</div>
         </div>
       </div>
+      <div id="resumeBox"></div>
       <button id="startBtn" class="primary-btn">Rennen starten</button>
+      <div class="mode-switch">
+        <button id="modeSingle" class="mode-btn">Einzelrennen</button>
+        <button id="modeSeason" class="mode-btn">Saison 2026</button>
+      </div>
+      <button id="seasonBtn" class="secondary-btn season-btn hidden">🏆 Saison-Übersicht</button>
       <div class="setup st-card">
         <div class="setup-label">DEIN TEAM</div>
         <div id="teamList" class="pw-teams" role="listbox" aria-label="Team auswählen"></div>
@@ -153,6 +159,7 @@
       </div>
       <div class="setup-opts">
         <div class="setup-row st-card"><span class="setup-label">WETTER</span>
+          <div id="wxSeasonNote" class="wx-season-note hidden">In der Saison ist das Wetter zufällig – mit der typischen Regenwahrscheinlichkeit der Strecke.</div>
           <div id="weatherSeg" class="seg seg-wx" role="radiogroup" aria-label="Wetter"></div>
           <div id="forecast" class="forecast"></div>
         </div>
@@ -169,7 +176,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 5</div>
+      <div class="app-version">Version 6</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -177,6 +184,23 @@
         </label>
         <div id="seedInfo" class="seed-info"></div>
       </details>
+    </div>
+  </div>
+
+  <div id="seasonScreen" class="overlay hidden">
+    <div class="sheet">
+      <h2 class="sheet-title">🏆 Saison 2026</h2>
+      <div id="seasonNotes"></div>
+      <div class="season-tabs">
+        <button class="stab active" data-stab="drivers">Fahrer</button>
+        <button class="stab" data-stab="teams">Teams</button>
+        <button class="stab" data-stab="calendar">Kalender</button>
+      </div>
+      <div id="seasonBody"></div>
+      <div class="sheet-actions">
+        <button id="seasonResetBtn" class="secondary-btn">Saison neu starten</button>
+        <button id="seasonCloseBtn" class="primary-btn">Schließen</button>
+      </div>
     </div>
   </div>
 
