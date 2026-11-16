@@ -1,0 +1,729 @@
+// Streckenkarte (Canvas): Strecke, Boxengasse, Marshal-Sektoren, Flaggen,
+// Gefahrenstellen, Autos. Zoom (Zwei-Finger / Mausrad) und Verschieben nur hier.
+import { pointAt, wrapD, sectorIndexAt } from '../sim/trackModel.js';
+import { drawTrackArt } from './trackArt.js';
+import { sceneCarAt, HALF_W } from '../sim/scenes.js';
+import { drawCar } from './scenePlayer.js';
+import { isStraight } from '../sim/energy.js';
+
+export const PIT_OFFSET_PX = 9;
+const MAX_ZOOM = 6;
+const BG_MARGIN = 140;   // Hintergrund größer zeichnen → Verschieben ohne Neuzeichnen
+const FOLLOW_ZOOM = 3.2;
+const FLAG_COLORS = { yellow: '#ffd12e', double: '#ffd12e' };
+
+export class TrackMap {
+  constructor(canvas, track) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.track = track;
+    this.selected = null;
+    this.showLabels = false;
+    this.showSectors = false;
+    this.highlightSector = null;
+    this.zoom = 1;
+    this.paused = false;
+    this.anim = 0;          // Animationsuhr, steht bei Pause still
+    this.lastDraw = null;
+    this.panX = 0;
+    this.panY = 0;
+    this.bg = document.createElement('canvas');
+    this.bgDirty = true;
+    this.onSelectCar = null;
+    this.onSelectSector = null;
+    this.onZoomChange = null;
+    this.pointers = new Map();
+    this.setupInput();
+    new ResizeObserver(() => this.resize()).observe(canvas);
+    this.resize();
+  }
+
+  // ---------- Größe & Ansicht ----------
+
+  resize() {
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    // Größe geändert (z. B. Bereich unten ein-/ausgeklappt): komplett herauszoomen
+    if (this.w && !this.follow && (Math.abs(rect.width - this.w) > 1 || Math.abs(rect.height - this.h) > 1)) {
+      this.zoom = 1;
+      this.panX = 0;
+      this.panY = 0;
+      if (this.onZoomChange) this.onZoomChange(1);
+    }
+    const dpr = window.devicePixelRatio || 1;
+    this.dpr = dpr;
+    this.w = rect.width;
+    this.h = rect.height;
+    this.canvas.width = Math.round(rect.width * dpr);
+    this.canvas.height = Math.round(rect.height * dpr);
+    this.bg.width = Math.round((rect.width + 2 * BG_MARGIN) * dpr);
+    this.bg.height = Math.round((rect.height + 2 * BG_MARGIN) * dpr);
+    const tr = this.track;
+    const pad = 34;    // Rand: Gras und Auslaufzonen ragen über die Mittellinie hinaus
+    const padTop = this.padTop ?? 76; // Platz für Einblendungen (Vorfälle, VSC, SC …)
+    const padL = this.padLeft ? this.padLeft + 40 : pad; // Platz für den Ranking-Tower
+    const bounds = (ang, h = this.h) => {
+      const c = Math.cos(ang), sn = Math.sin(ang);
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i = 0; i < tr.N; i += 2) {
+        const x = tr.xs[i] * c + tr.ys[i] * sn, y = -tr.xs[i] * sn + tr.ys[i] * c;
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+      const s = Math.min((this.w - padL - pad) / (maxX - minX), (h - padTop - pad) / (maxY - minY));
+      return { minX, minY, maxX, maxY, s };
+    };
+    // Hohe, schmale Karte (eingeklappter Bereich): Strecke um 90° drehen, wenn sie dadurch größer wird.
+    // Zwischen ausgeklappter und eingeklappter Höhe folgt der Winkel stufenlos der Kartenhöhe –
+    // beim Wischen dreht sich die Karte also langsam mit.
+    // Beste Drehung je Strecke und Kartenformat: alle Winkel in 5°-Schritten prüfen und den nehmen,
+    // bei dem die Strecke am größten erscheint (TV hochkant, Desk quer – automatisch je Strecke).
+    // Kaum besser (< 4 %) als ungedreht → ungedreht lassen.
+    const angleFor = h => {
+      const key = `${Math.round(this.w)}x${Math.round(h)}:${padL}:${padTop}`;
+      this.angleCache = this.angleCache && this.angleCache.track === tr ? this.angleCache : { track: tr };
+      if (this.angleCache[key] !== undefined) return this.angleCache[key];
+      const s0 = bounds(0, h).s;
+      let best = 0, bestS = s0 * 1.04;
+      for (let deg = 5; deg < 180; deg += 5) {
+        const a = deg * Math.PI / 180;
+        const sc = bounds(a, h).s * (1 - Math.min(Math.abs(deg - 90), deg, 180 - deg) * 0.0002);   // leichte Vorliebe für glatte Winkel
+        if (sc > bestS) { bestS = sc; best = a; }
+      }
+      this.angleCache[key] = best;
+      return best;
+    };
+    const [h0, h1] = this.heightRange ? this.heightRange() : [this.h, this.h];
+    if (h1 > h0 + 40 && this.h > h0 && this.h < h1) {
+      const a0 = angleFor(h0), a1 = angleFor(h1);
+      let t = (this.h - h0) / (h1 - h0);
+      t = t * t * (3 - 2 * t);
+      this.angle = a0 + (a1 - a0) * t;
+    } else {
+      this.angle = angleFor(this.h);
+    }
+    this.cosA = Math.cos(this.angle);
+    this.sinA = Math.sin(this.angle);
+    const { minX, minY, maxX, maxY, s } = bounds(this.angle);
+    this.scale = s;
+    this.ox = padL + (this.w - padL - pad - (maxX - minX) * s) / 2 - minX * s;
+    this.oy = padTop + (this.h - padTop - pad - (maxY - minY) * s) / 2 - minY * s;
+    // Mittelpunkt in Streckenkoordinaten (ungedreht)
+    const mx = (minX + maxX) / 2, my = (minY + maxY) / 2;
+    this.cx = mx * this.cosA - my * this.sinA;
+    this.cy = mx * this.sinA + my * this.cosA;
+    this.clampPan();
+    this.bgDirty = true;
+    // Sofort neu zeichnen: eine geänderte Canvas-Größe löscht den Inhalt – sonst flackert es beim Wischen
+    if (this.lastRace !== undefined) this.draw(this.lastRace, this.lastRenderD || new Map());
+  }
+
+  setTrack(track) {
+    if (this.track === track) return;
+    this.track = track;
+    this.w = 0;           // erzwingt Neuberechnung
+    this.zoom = 1;
+    this.panX = 0;
+    this.panY = 0;
+    this.resize();
+  }
+
+  setPadLeft(px) {
+    if (this.padLeft === px) return;
+    this.padLeft = px;
+    this.zoom = 1;
+    this.panX = 0;
+    this.panY = 0;
+    if (this.onZoomChange) this.onZoomChange(1);
+    this.resize();
+  }
+
+  setView(zoom, panX, panY) {
+    this.zoom = Math.min(MAX_ZOOM, Math.max(1, zoom));
+    this.panX = panX;
+    this.panY = panY;
+    this.clampPan();
+    if (this.onZoomChange) this.onZoomChange(this.zoom);
+  }
+
+  resetView() {
+    this.setView(1, 0, 0);
+  }
+
+  // Auf einen Marshal-Sektor heranzoomen (Flaggen-Konsole)
+  zoomToSector(idx) {
+    const tr = this.track, sec = tr.sectors[idx];
+    if (!sec || !this.w) return;
+    const len = ((sec.end - sec.start) % tr.L + tr.L) % tr.L || tr.L;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k = 0; k <= 24; k++) {
+      let [x, y] = pointAt(tr, sec.start + len * k / 24, 0);
+      if (this.angle) [x, y] = [x * this.cosA + y * this.sinA, -x * this.sinA + y * this.cosA];
+      const px = this.ox + x * this.scale, py = this.oy + y * this.scale;
+      x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+    }
+    const z = Math.max(2, Math.min(MAX_ZOOM, 1.05 * Math.min(this.w / Math.max(40, x1 - x0), this.h / Math.max(40, y1 - y0))));
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    this.sectorZoom = idx;
+    this.setView(z, this.w / 2 - cx * z, this.h / 2 - cy * z);
+  }
+
+  endSectorZoom() {
+    if (this.sectorZoom === undefined || this.sectorZoom === null) return;
+    this.sectorZoom = null;
+    if (!this.follow && !this.replay) this.resetView();
+  }
+
+  zoomAt(factor, sx, sy) {
+    const z0 = this.zoom;
+    const z1 = Math.min(MAX_ZOOM, Math.max(1, z0 * factor));
+    // Punkt unter dem Finger bleibt an Ort und Stelle
+    const bx = (sx - this.panX) / z0, by = (sy - this.panY) / z0;
+    this.setView(z1, sx - bx * z1, sy - by * z1);
+  }
+
+  clampPan() {
+    if (this.follow) return;   // Verfolgen: Fahrer bleibt in der Mitte, auch am Kartenrand
+    const z = this.zoom;
+    this.panX = Math.min(0, Math.max(this.w - this.w * z, this.panX));
+    this.panY = Math.min(0, Math.max(this.h - this.h * z, this.panY));
+  }
+
+  toPx([x, y]) {
+    if (this.angle) [x, y] = [x * this.cosA + y * this.sinA, -x * this.sinA + y * this.cosA];
+    return [(this.ox + x * this.scale) * this.zoom + this.panX, (this.oy + y * this.scale) * this.zoom + this.panY];
+  }
+
+  pos(d, lateralPx = 0) {
+    return this.toPx(pointAt(this.track, d, lateralPx / (this.scale * this.zoom)));
+  }
+
+  widthScale() {
+    return 1 + (this.zoom - 1) * 0.35;
+  }
+
+  // ---------- Eingabe ----------
+
+  setupInput() {
+    const c = this.canvas;
+    const local = e => {
+      const r = c.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top];
+    };
+    c.addEventListener('pointerdown', e => {
+      c.setPointerCapture(e.pointerId);
+      const [x, y] = local(e);
+      this.pointers.set(e.pointerId, { x, y, sx: x, sy: y });
+      if (this.pointers.size === 1) this.tapCandidate = { x, y, t: performance.now() };
+      else this.tapCandidate = null;
+      if (this.pointers.size === 2) {
+        const [a, b] = [...this.pointers.values()];
+        this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.zoom };
+      }
+    });
+    c.addEventListener('pointermove', e => {
+      const p = this.pointers.get(e.pointerId);
+      if (!p) return;
+      const [x, y] = local(e);
+      const dx = x - p.x, dy = y - p.y;
+      p.x = x; p.y = y;
+      if (this.tapCandidate && Math.hypot(x - this.tapCandidate.x, y - this.tapCandidate.y) > 8) this.tapCandidate = null;
+      if (this.pointers.size === 2 && this.pinch) {
+        const [a, b] = [...this.pointers.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        const target = this.pinch.zoom * (dist / this.pinch.dist);
+        this.zoomAt(target / this.zoom, mx, my);
+        // Verschieben mit zwei Fingern
+        this.setView(this.zoom, this.panX + dx / 2, this.panY + dy / 2);
+      } else if (this.pointers.size === 1 && this.zoom > 1 && !this.tapCandidate) {
+        this.setView(this.zoom, this.panX + dx, this.panY + dy);
+      }
+    });
+    const end = e => {
+      const tap = this.tapCandidate && this.pointers.size === 1 && performance.now() - this.tapCandidate.t < 500;
+      this.pointers.delete(e.pointerId);
+      if (this.pointers.size < 2) this.pinch = null;
+      if (tap && e.type === 'pointerup') this.handleTap(this.tapCandidate.x, this.tapCandidate.y);
+      this.tapCandidate = null;
+    };
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+    c.addEventListener('wheel', e => {
+      e.preventDefault();
+      const [x, y] = local(e);
+      this.zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, x, y);
+    }, { passive: false });
+    c.addEventListener('dblclick', e => {
+      e.preventDefault();
+      const [x, y] = local(e);
+      if (this.zoom > 1.5) this.resetView();
+      else this.zoomAt(2.5, x, y);
+    });
+  }
+
+  handleTap(x, y) {
+    // 1) Auto in der Nähe?
+    let best = null, bd = 18 * 18;
+    for (const h of this.hit || []) {
+      const d = (h.x - x) ** 2 + (h.y - y) ** 2;
+      if (d < bd) { bd = d; best = h; }
+    }
+    if (best) {
+      if (this.onSelectCar) this.onSelectCar(best.id);
+      return;
+    }
+    // 2) Streckenabschnitt → Marshal-Sektor
+    const tr = this.track;
+    let bestD = null, bestDist = 28 * 28;
+    for (let i = 0; i < tr.N; i += 2) {
+      const [px, py] = this.toPx([tr.xs[i], tr.ys[i]]);
+      const d = (px - x) ** 2 + (py - y) ** 2;
+      if (d < bestDist) { bestDist = d; bestD = i * tr.ds; }
+    }
+    if (bestD !== null && this.onSelectSector) this.onSelectSector(sectorIndexAt(tr, bestD));
+    else if (this.onSelectCar) this.onSelectCar(null);
+  }
+
+  // ---------- Zeichnen ----------
+
+  tracePath(ctx, from, to, lat = 0) {
+    const steps = Math.max(2, Math.round((to - from) / 5));
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const [x, y] = this.pos(from + (to - from) * (i / steps), lat);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+  }
+
+  drawBackground() {
+    const ctx = this.bg.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.bg.width, this.bg.height);
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, BG_MARGIN * this.dpr, BG_MARGIN * this.dpr);
+    drawTrackArt(this, ctx, { pitOffsetPx: PIT_OFFSET_PX });
+    this.bgDirty = false;
+    this.bgView = { zoom: this.zoom, panX: this.panX, panY: this.panY };
+  }
+
+  // Verfolgen: Ansicht so verschieben, dass das Auto in der Mitte steht
+  startFollow(id) {
+    this.follow = id;
+    this.selected = id;
+    this.zoom = Math.max(this.zoom, FOLLOW_ZOOM);
+    if (this.onZoomChange) this.onZoomChange(this.zoom);
+  }
+
+  // Wiederholung einer Rennszene auf der Karte
+  startReplay(scene, sharp, onEnd) {
+    this.replay = { scene, sharp, t: -0.6, onEnd };
+    this.zoom = 4.5;
+    if (this.onZoomChange) this.onZoomChange(this.zoom);
+  }
+
+  drawReplay(ctx, dt) {
+    const rp = this.replay;
+    rp.t += dt;
+    const sc = rp.scene;
+    if (rp.t > sc.dur + 1) {
+      this.replay = null;
+      this.resetView();
+      if (rp.onEnd) rp.onEnd();
+      return;
+    }
+    const t = Math.max(0, rp.t);
+    const half = 3.75 * this.widthScale();
+    const at = (s, lat) => this.pos(sc.d0 + s, (lat / HALF_W) * half);
+    ctx.fillStyle = 'rgba(11,15,23,0.35)';
+    ctx.fillRect(0, 0, this.w, this.h);
+    for (const car of sc.cars) {
+      const [s, lat, rot] = sceneCarAt(sc, car, t);
+      const [s2, lat2] = sceneCarAt(sc, car, Math.min(sc.dur, t + 0.15));
+      const [x, y] = at(s, lat);
+      let [x2, y2] = at(s2 + 0.01, lat2);
+      if (Math.hypot(x2 - x, y2 - y) < 0.2) [x2, y2] = at(s + 2, lat);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.atan2(y2 - y, x2 - x) + Math.PI / 2 + rot);
+      const k = (half * 2 * 1.1) / 63;
+      ctx.scale(k, k);
+      drawCar(ctx, car.c1, car.c2, car.num, { numbers: false });
+      ctx.restore();
+      if (rp.sharp) this.drawLabel(ctx, x, y, car.id, false);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,.7)';
+    ctx.fillRect(this.w / 2 - 70, 8, 140, 22);
+    ctx.fillStyle = '#ffd12e';
+    ctx.font = '700 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`WIEDERHOLUNG · ${sc.corner}`, this.w / 2, 19);
+  }
+
+  stopFollow() {
+    if (!this.follow) return;
+    this.follow = null;
+    this.resetView();
+  }
+
+  centerOn(d, lateral) {
+    this.panX = 0;
+    this.panY = 0;
+    const [bx, by] = this.pos(d, lateral);
+    this.panX = this.w / 2 - bx;
+    this.panY = (this.h + 40) / 2 - by;
+  }
+
+  drawSectorOverlay(ctx, race) {
+    const tr = this.track;
+    const ws = this.widthScale();
+    const t = performance.now() / 1000;
+    tr.sectors.forEach((sec, i) => {
+      const flag = race ? race.flags[i] : 'clear';
+      const hl = this.highlightSector === i;
+      if (flag === 'clear' && !hl) return;
+      ctx.lineCap = 'butt';
+      ctx.lineJoin = 'round';
+      if (hl) {
+        this.tracePath(ctx, sec.start, sec.end);
+        ctx.strokeStyle = 'rgba(61,139,255,0.55)';
+        ctx.lineWidth = 15 * ws;
+        ctx.stroke();
+      }
+      if (flag === 'yellow' || flag === 'double') {
+        this.tracePath(ctx, sec.start, sec.end);
+        ctx.strokeStyle = FLAG_COLORS[flag];
+        ctx.globalAlpha = flag === 'double' ? 0.65 + 0.35 * Math.sin(t * 6) : 0.9;
+        ctx.lineWidth = (flag === 'double' ? 7.5 : 5) * ws;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        if (flag === 'double') {
+          ctx.strokeStyle = '#1b2029';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      } else if (flag === 'slippery') {
+        this.tracePath(ctx, sec.start, sec.end);
+        ctx.lineWidth = 5 * ws;
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = '#ffd12e';
+        ctx.stroke();
+        ctx.lineDashOffset = 6;
+        ctx.strokeStyle = '#e10600';
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.lineDashOffset = 0;
+      }
+    });
+
+    if (this.showSectors) {
+      ctx.font = '700 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      tr.sectors.forEach(sec => {
+        const mid = (sec.start + sec.end) / 2;
+        const p = pointAt(tr, mid);
+        const [px, py] = this.toPx(p);
+        const [qx, qy] = this.toPx([this.cx, this.cy]);
+        const dx = px - qx, dy = py - qy;
+        const len = Math.hypot(dx, dy) || 1;
+        const x = px - (dx / len) * 16 * ws, y = py - (dy / len) * 16 * ws;
+        ctx.fillStyle = 'rgba(61,139,255,0.9)';
+        ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(String(sec.id), x, y + 0.5);
+      });
+    }
+  }
+
+  drawHazards(ctx, race) {
+    const t = performance.now() / 1000;
+    for (const h of race.hazards) {
+      if (h.ended || h.global) continue;
+      const [x, y] = this.pos(h.d, 0);
+      const s = 9 + Math.sin(t * 5) * 1.2;
+      const ty = y - 14;
+      ctx.beginPath();
+      ctx.moveTo(x, ty - s);
+      ctx.lineTo(x + s, ty + s * 0.75);
+      ctx.lineTo(x - s, ty + s * 0.75);
+      ctx.closePath();
+      ctx.fillStyle = '#ffd12e';
+      ctx.fill();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#000';
+      ctx.font = '900 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('!', x, ty + 2);
+    }
+  }
+
+  // Reifen aufwärmen auf der Formationsrunde: nur auf Geraden und kurz vor der Startaufstellung.
+  // Jedes Auto anders (Takt, Ausschlag, Eifer) und je Abschnitt zufällig an oder aus – viele, aber nicht alle.
+  // Reine Darstellung, reproduzierbar je Rennen (Hash aus Rennen, Auto und Abschnitt).
+  warmWeave(race, car, toGo) {
+    const h = (n) => { let a = (Math.imul((race.seed | 0) + 1, 2654435761) ^ Math.imul(n + 7, 40503)) >>> 0; for (let i = 0; i < car.id.length; i++) a = Math.imul(a ^ car.id.charCodeAt(i), 16777619) >>> 0; a ^= a >>> 13; a = Math.imul(a, 0x5bd1e995) >>> 0; a ^= a >>> 15; return (a >>> 0) / 4294967296; };
+    const wave = 13 + h(1) * 11;          // Takt der Schlangenlinie (Periode ca. 80–150 m)
+    const amp = 2.2 + h(2) * 1.8;         // Ausschlag
+    const phase = h(3) * 6.283;
+    const keen = 0.3 + h(4) * 0.55;       // wie gerne dieses Auto webt
+    let env = 0;
+    if (toGo < 500 && toGo > 110) {
+      // direkt vor dem Einsortieren: die meisten, aber nicht alle
+      if (h(5) < 0.85) env = Math.min(1, (500 - toGo) / 70) * Math.min(1, (toGo - 110) / 60);
+    } else if (toGo >= 500) {
+      // auf den Geraden: je 200-m-Abschnitt entscheidet der Zufall, mit weichem Ein- und Ausblenden
+      const CH = 200, c = Math.floor(car.d / CH), f = car.d / CH - c;
+      if (h(100 + c) < keen) {
+        const s = (isStraight(this.track, car.d - 35) ? 1 : 0) + (isStraight(this.track, car.d) ? 1 : 0) + (isStraight(this.track, car.d + 35) ? 1 : 0);
+        env = Math.sin(Math.PI * f) ** 0.6 * (s / 3) * (0.65 + h(200 + c) * 0.45);
+      }
+    }
+    return env ? Math.sin(car.d / wave + phase) * amp * env : 0;
+  }
+
+  carLateral(race, car) {
+    const ws = this.widthScale();
+    if (car.offTrack) return car.offTrack.lateral * ws;
+    if (car.inPit || car.stopTimer > 0) return this.track.pit.side * PIT_OFFSET_PX * ws;
+    let lat = 0;
+    const nr = race.neutral;
+    const restartForm = nr && nr.type === 'red' && nr.restart && nr.phase === 'formation';
+    if (car.gridLat) {
+      // Startaufstellung beim Neustart: versetzt, nach dem Start zur Mitte
+      const g = car.gridLat;
+      lat = g.side * 4 * (g.until === null ? 1 : Math.min(1, Math.max(0, (g.until - car.d) / 120)));
+      if (g.until !== null && car.d > g.until) car.gridLat = null;
+    } else if ((race.phase === 'formation' || restartForm) && car.fTarget !== undefined && !(race.formation && race.formation.arrived)) {
+      // Ende der Formationsrunde: schon beim Einrollen versetzt in die eigene Startbox
+      const toGo = car.fTarget - car.d;
+      const slot = car.fSlot ?? Math.round((race.track.L - car.fTarget - 6) / 8);
+      const side = slot % 2 === 0 ? -1 : 1;
+      lat = side * 4 * Math.min(1, Math.max(0, (70 - toGo) / 60));
+      if (car.v > 8 && !car.fRegain) lat += this.warmWeave(race, car, toGo);
+    } else if (car.lap === 0 && car.d < 120) {
+      const side = car.gridPos % 2 === 1 ? -1 : 1;
+      lat = side * 4 * Math.min(1, Math.max(0, (120 - car.d) / 120));
+    }
+    if (car.pass) {
+      const target = race.carById[car.pass.target];
+      const gap = Math.abs(wrapD(race.track, target.d - car.d));
+      const g = Math.min(gap, race.track.L - gap);
+      if (g < 40) lat -= (car.pass.blue ? 4 : 5) * (1 - g / 40);
+    }
+    return lat * ws;
+  }
+
+  draw(race, renderD) {
+    const now = performance.now();
+    if (!this.paused && this.lastDraw !== null) this.anim += Math.min(0.25, (now - this.lastDraw) / 1000);
+    this.lastDraw = now;
+    this.lastRace = race;
+    this.lastRenderD = renderD;
+    const realDt = this.lastRealDraw ? Math.min(0.1, (now - this.lastRealDraw) / 1000) : 0;
+    this.lastRealDraw = now;
+    if (this.replay) this.centerOn(this.replay.scene.d0, 0);
+    else if (this.follow && race && race.carById[this.follow]) {
+      const car = race.carById[this.follow];
+      if (car.retired && car.wreck && !car.wreck.removed) this.centerOn(car.wreck.d, car.wreck.lateral * this.widthScale());
+      else if (!car.retired) this.centerOn(renderD.get(car) ?? car.d, this.carLateral(race, car));
+    }
+    const bv = this.bgView;
+    if (!this.bgDirty && (!bv || bv.zoom !== this.zoom
+      || Math.abs(this.panX - bv.panX) > BG_MARGIN * 0.8 || Math.abs(this.panY - bv.panY) > BG_MARGIN * 0.8)) this.bgDirty = true;
+    if (this.bgDirty) this.drawBackground();
+    const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const v = this.bgView;
+    ctx.drawImage(this.bg, Math.round((this.panX - v.panX - BG_MARGIN) * this.dpr), Math.round((this.panY - v.panY - BG_MARGIN) * this.dpr));
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.drawSectorOverlay(ctx, race);
+    if (!race) return;
+    this.drawWeather(ctx, race);
+    this.drawNeutral(ctx, race);
+
+    // Liegengebliebene Autos
+    for (const car of race.cars) {
+      if (!car.wreck || car.wreck.removed) continue;
+      const [x, y] = this.pos(car.wreck.d, car.wreck.lateral * this.widthScale());
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = car.team.color;
+      ctx.globalAlpha = 0.55;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#ff5a5a';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    this.drawHazards(ctx, race);
+    if (this.replay) { this.drawReplay(ctx, realDt); return; }
+
+    const standings = race.standings();
+    const posOf = new Map(standings.map((c, i) => [c, i + 1]));
+    this.hit = [];
+    for (const car of [...standings].reverse()) {
+      if (car.retired) {
+        if (car.wreck && !car.wreck.removed) {
+          const [x, y] = this.pos(car.wreck.d, car.wreck.lateral * this.widthScale());
+          this.hit.push({ id: car.id, x, y });
+          if (this.selected === car.id) this.drawLabel(ctx, x, y, `${car.id} – Ausfall`, true);
+        }
+        continue;
+      }
+      if (car.parked) continue;   // nach der Auslaufrunde in der Box abgestellt
+      const d = renderD.get(car) ?? car.d;
+      const [x, y] = this.pos(d, this.carLateral(race, car));
+      const sel = this.selected === car.id;
+      const r = (sel ? 6.5 : 5) * Math.min(1.4, this.widthScale());
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = car.team.color;
+      ctx.fill();
+      ctx.lineWidth = sel ? 2.5 : 1.5;
+      ctx.strokeStyle = sel ? '#fff' : car.offTrack ? '#ffd12e' : '#0b0f17';
+      ctx.stroke();
+      this.hit.push({ id: car.id, x, y });
+
+      const pos = posOf.get(car);
+      if (sel || this.showLabels || pos === 1 || this.zoom >= 2.5) {
+        const label = sel || pos === 1 ? `${pos} ${car.id}` : car.id;
+        this.drawLabel(ctx, x, y, label, sel);
+      }
+    }
+    this.drawSafetyCar(ctx, race);
+    this.drawServices(ctx, race);
+  }
+
+  // Einsatzfahrzeuge (nur sichtbar, solange im Einsatz)
+  drawServices(ctx, race) {
+    const s = race.svc;
+    if (!s) return;
+    const tag = (d, lat, text, bg, fg = '#000') => {
+      const [x, y] = this.pos(d, lat);
+      ctx.font = '900 8.5px system-ui, sans-serif';
+      const w = Math.max(18, ctx.measureText(text).width + 8), h = 12;
+      ctx.fillStyle = bg; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, y + 0.5);
+    };
+    const pitLat = this.track.pit.side * PIT_OFFSET_PX * this.widthScale();
+    if (s.medical) tag(s.medical.d, 0, 'MED', '#e8ecf2', '#1d4ed8');
+    if (s.startMed && s.startMed.phase === 'go') tag(s.startMed.d, 0, 'MED', '#e8ecf2', '#1d4ed8');
+    if (s.sweeper) tag(s.sweeper.d, 0, 'SWEEP', '#9ca3af');
+    for (const c of s.cranes) tag(c.d, 13 * this.widthScale(), 'CRANE', '#facc15');
+    if (s.pitClosed) {
+      const [x, y] = this.pos(this.track.pit.entry, pitLat);
+      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6); ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke();
+      tag(this.track.pit.entry, pitLat + 14, 'PIT CLOSED', '#ef4444', '#fff');
+    }
+  }
+
+  // Nasse Strecke (Glanz) und Regen
+  drawWeather(ctx, race) {
+    const wx = race.weather;
+    if (!wx || (wx.wetness < 0.05 && wx.rain < 0.03)) return;
+    const ws = this.widthScale();
+    if (wx.wetness >= 0.05) {
+      this.tracePath(ctx, 0, this.track.L);
+      ctx.closePath();
+      ctx.strokeStyle = `rgba(120, 165, 225, ${0.28 * wx.wetness})`;
+      ctx.lineWidth = 7 * ws;
+      ctx.lineCap = 'butt';
+      ctx.stroke();
+    }
+    if (wx.rain >= 0.03) {
+      const n = Math.round(160 * wx.rain);
+      const t = this.anim;
+      ctx.strokeStyle = `rgba(190, 210, 240, ${0.18 + 0.25 * wx.rain})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const sx = (i * 137.5) % this.w;
+        const speed = 220 + (i % 7) * 30;
+        const y = ((i * 89.3) + t * speed) % (this.h + 20) - 10;
+        const x = (sx + y * 0.25) % this.w;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 2.5, y - 9);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // VSC / SC: gelb gestrichelte Strecke, Rot: rote Strecke
+  drawNeutral(ctx, race) {
+    const n = race.neutral;
+    if (!n) return;
+    const ws = this.widthScale();
+    this.tracePath(ctx, 0, this.track.L);
+    ctx.closePath();
+    ctx.lineWidth = 3 * ws;
+    ctx.lineCap = 'butt';
+    if (n.type === 'red') {
+      ctx.strokeStyle = 'rgba(225, 6, 0, 0.85)';
+      ctx.stroke();
+    } else {
+      ctx.setLineDash([10, 8]);
+      ctx.lineDashOffset = -(this.anim * 25) % 18;
+      ctx.strokeStyle = n.type === 'sc' ? 'rgba(255, 154, 31, 0.9)' : 'rgba(255, 209, 46, 0.85)';
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
+    }
+  }
+
+  drawSafetyCar(ctx, race) {
+    const sc = race.sc;
+    if (!sc) return;
+    const lat = sc.inPit ? this.track.pit.side * PIT_OFFSET_PX * this.widthScale() : 0;
+    const [x, y] = this.pos(sc.d, lat);
+    const w = 22, h = 13;
+    ctx.fillStyle = '#ff9a1f';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(x - w / 2, y - h / 2, w, h, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#000';
+    ctx.font = '900 9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SC', x, y + 0.5);
+    // Gelbe Lichtleiste: blinkt, solange das SC draußen bleibt; aus, sobald „SC in“ angesagt ist
+    const n = race.neutral;
+    if (n && n.type === 'sc' && n.phase === 'out' && !sc.inPit) {
+      const on = Math.floor(performance.now() / 350) % 2 === 0;
+      for (const k of [-1, 1]) {
+        const lx = x + k * 5, ly = y - h / 2 - 3.5;
+        ctx.beginPath();
+        ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+        ctx.fillStyle = (k === -1) === on ? '#ffe14a' : '#5a4a10';
+        if ((k === -1) === on) { ctx.shadowColor = '#ffd400'; ctx.shadowBlur = 8; }
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 1; ctx.strokeStyle = '#000'; ctx.stroke();
+      }
+    }
+  }
+
+  drawLabel(ctx, x, y, label, sel) {
+    ctx.font = `${sel ? 700 : 600} 10px system-ui, sans-serif`;
+    const w = ctx.measureText(label).width + 8;
+    // am rechten Rand nach links ausweichen
+    const lx = x + 8 + w > this.w - 4 ? x - 8 - w : x + 8;
+    const ly = y - 16;
+    ctx.fillStyle = sel ? '#fff' : 'rgba(11,15,23,0.85)';
+    ctx.fillRect(lx, ly, w, 14);
+    ctx.fillStyle = sel ? '#0b0f17' : '#e6e9ef';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, lx + 4, ly + 7.5);
+  }
+}

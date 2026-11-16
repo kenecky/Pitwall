@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f17">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pit Wall">
+  <title>Pit Wall</title>
+  <link rel="manifest" href="manifest.webmanifest?v=1">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/pitwall.css">
+  <!-- Ladeseite: sofort sichtbar, bis alles geladen und die Startseite fertig gezeichnet ist -->
+  <style>
+    #boot { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: #15181d; color: #f1f4f8;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; transition: opacity .35s ease; }
+    #boot.gone { opacity: 0; pointer-events: none; }
+    #boot::before, #boot::after { content: ''; position: absolute; left: 0; right: 0; height: 8px; background: repeating-linear-gradient(-45deg, #facc15 0 10px, #15181d 10px 20px); }
+    #boot::before { top: 0; } #boot::after { bottom: 0; }
+    #boot .bt-in { display: flex; flex-direction: column; align-items: center; width: min(260px, 72vw); }
+    #boot .bt-logo { width: 92px; height: 92px; border-radius: 20px; box-shadow: 0 14px 34px -14px rgba(0,0,0,.7); animation: btPuls 1.6s ease-in-out infinite; }
+    #boot .bt-name { margin-top: 16px; font: 800 20px ui-monospace, "RC Mono", monospace; letter-spacing: .14em; }
+    #boot .bt-sub { margin-top: 2px; font-size: 12px; color: #aab3c2; }
+    #boot .bt-bar { width: 100%; height: 6px; margin-top: 24px; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; }
+    #boot .bt-bar i { display: block; height: 100%; width: 6%; border-radius: 3px; background: #facc15; transition: width .2s ease-out; }
+    #boot .bt-text { margin-top: 10px; font-size: 12.5px; color: #c3cad6; min-height: 17px; }
+    @keyframes btPuls { 50% { transform: scale(1.05); } }
+    @media (prefers-reduced-motion: reduce) { #boot .bt-logo { animation: none; } }
+  </style>
+</head>
+<body>
+  <div id="boot"><div class="bt-in">
+    <img class="bt-logo" src="icons/icon-192.png" alt="">
+    <div class="bt-name">PIT WALL</div>
+    <div class="bt-sub">Teamchef · Formel 1</div>
+    <div class="bt-bar"><i id="bootBar"></i></div>
+    <div id="bootText" class="bt-text">Wird geladen …</div>
+  </div></div>
+
+  <div id="app">
+    <header class="status">
+      <button id="menuBtn" class="icon-btn" aria-label="Menü">☰</button>
+      <div class="status-lap">
+        <span id="lapLabel" class="label">Runde</span>
+        <span id="lap">–</span>
+      </div>
+      <div id="flag" class="flag-chip flag-start">START</div>
+      <div class="status-clock"><span id="clock">0:00:00</span></div>
+      <div class="status-clock status-wx" id="wxOpen" role="button" aria-label="Wetter und Regenradar"><span id="wx" class="wx"></span></div>
+      <button id="speedBtn" class="pill-btn" aria-label="Tempo">4×</button>
+      <button id="pauseBtn" class="pill-btn pause-btn" aria-label="Pause">▶</button>
+    </header>
+
+    <section class="map-wrap">
+      <canvas id="map"></canvas>
+      <div id="lights" class="lights hidden"><span></span><span></span><span></span><span></span><span></span></div>
+      <div id="tower" class="tower"></div>
+      <div class="map-btns">
+        <button id="zoomResetBtn" class="map-btn hidden" aria-label="Zoom zurücksetzen">⤢ Gesamt</button>
+        <button id="towerBtn" class="map-btn" aria-label="Ranking anzeigen">TOWER</button>
+        <button id="labelsBtn" class="map-btn" aria-label="Kürzel anzeigen">ABC</button>
+      </div>
+      <div class="paused-tag">PAUSE</div>
+      <div class="mon-label">TRACK MAP · LIVE</div>
+      <div id="pwAlert" class="pw-alert hidden"></div>
+    </section>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="wall">PIT WALL</button>
+      <button class="tab" data-tab="timing">ZEITEN</button>
+      <button class="tab" data-tab="feed">LOG <span id="feedBadge" class="badge-count hidden">0</span></button>
+    </nav>
+
+    <main class="panels">
+      <div id="panel-wall" class="panel active"><div id="wall" class="pw-wall"></div></div>
+      <div id="panel-timing" class="panel">
+        <div class="timing-head">
+          <span class="pos">P</span><span class="teambar"></span><span class="code">Fahrer</span><span class="delta"></span><span class="rst"></span>
+          <button id="gapHead" class="gap gap-head">Abstand</button><span class="tyrecell">Reifen</span><span class="stops">St</span>
+        </div>
+        <div id="timing"></div>
+      </div>
+      <div id="panel-feed" class="panel">
+        <div id="feedFilter" class="fk-chips"></div>
+        <ul id="feed" class="feed" data-filter="all"></ul>
+      </div>
+    </main>
+  </div>
+
+  <div id="introScreen" class="intro-screen hidden"><canvas id="introCanvas"></canvas></div>
+
+  <!-- ☰ Menü während des Rennens -->
+  <div id="optionsScreen" class="overlay hidden">
+    <div class="sheet opt-sheet">
+      <h2 class="sheet-title">Menü</h2>
+      <label class="switch-row"><input id="soundToggle" type="checkbox"><span>Ton (Motoren, Startampel, Funk, Musik)</span></label>
+      <label class="switch-row"><input id="vibrateToggle" type="checkbox"><span>Vibration bei Funk und Neutralisierungen</span></label>
+      <div class="opt-actions">
+        <button id="optHomeBtn" class="secondary-btn">Rennen abbrechen · Startseite</button>
+        <button id="optCloseBtn" class="primary-btn">Weiter</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ptr" class="ptr hidden"><span>↓ Zum Aktualisieren ziehen</span></div>
+  <div id="startScreen" class="overlay start-screen">
+    <div class="sheet">
+      <div class="brand">
+        <img class="brand-mark brand-img" src="icons/icon-192.png" alt="">
+        <div>
+          <div class="brand-title">PIT WALL</div>
+          <div class="brand-sub">Teamchef · Formel 1</div>
+        </div>
+      </div>
+      <button id="startBtn" class="primary-btn">Rennen starten</button>
+      <div class="setup st-card">
+        <div class="setup-label">DEIN TEAM</div>
+        <div id="teamList" class="pw-teams" role="listbox" aria-label="Team auswählen"></div>
+        <div id="teamInfo" class="pw-teaminfo"></div>
+      </div>
+      <div id="gpCard" class="setup st-card">
+        <div class="setup-label">GRAND PRIX</div>
+        <div class="gp-preview">
+          <canvas id="trackPreview"></canvas>
+          <div id="evRound" class="gp-round"></div>
+          <div id="gpInfo" class="gp-info"></div>
+        </div>
+        <div id="gpList" class="gp-list" role="listbox" aria-label="Rennen auswählen"></div>
+      </div>
+      <div class="setup-opts">
+        <div class="setup-row st-card"><span class="setup-label">WETTER</span>
+          <div id="weatherSeg" class="seg seg-wx" role="radiogroup" aria-label="Wetter"></div>
+          <div id="forecast" class="forecast"></div>
+        </div>
+        <div class="setup-row st-card"><span class="setup-label">DAUER</span>
+          <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
+        </div>
+      </div>
+      <div class="app-version">Version 1</div>
+      <details class="options st-card">
+        <summary>Optionen</summary>
+        <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
+          <input id="seedInput" type="number" inputmode="numeric" placeholder="zufällig">
+        </label>
+        <div id="seedInfo" class="seed-info"></div>
+      </details>
+    </div>
+  </div>
+
+  <div id="wxScreen" class="overlay hidden">
+    <div class="sheet wx-sheet">
+      <div class="sheet-head-x"><h2 class="sheet-title">WETTER · RADAR</h2><button id="wxCloseBtn" class="x-btn" aria-label="Schließen">✕</button></div>
+      <div id="wxBody"></div>
+    </div>
+  </div>
+
+  <div id="resultScreen" class="overlay hidden">
+    <div class="sheet">
+      <h2 id="resultTitle" class="sheet-title">🏁 Rennergebnis</h2>
+      <div id="resultBody"></div>
+      <div class="sheet-actions">
+        <button id="newRaceBtn" class="primary-btn">Zur Startseite</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
