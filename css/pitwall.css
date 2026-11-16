@@ -232,3 +232,17 @@
 .pw-hist i { font-style: normal; color: #5b6475; }
 .pw-hl { font: 700 9.5px var(--mono); letter-spacing: .1em; color: var(--muted); margin-right: 4px; }
 .sess-checks small { color: #8a94a7; }
+
+/* v9: eigene Fahrer in der Zeitentabelle deutlich markieren */
+#timing .row.mine { background: rgba(250,204,21,.16) !important; box-shadow: inset 4px 0 #facc15; }
+#timing .row.mine .code { color: #facc15; font-weight: 800; }
+/* v9 */
+.pw-drv { font: 600 12.5px var(--mono); color: #e6e9ef; margin-top: 2px; }
+.pw-fftag { position: absolute; left: 8px; right: 8px; bottom: 44px; z-index: 5; padding: 7px 10px; border-radius: 6px; background: rgba(20,24,31,.92); border: 2px solid #38bdf8; font: 700 12px var(--mono); color: #bae6fd; text-align: center; }
+.pw-sets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.pw-sets button { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 7px 0 4px; border-radius: 15px; background: #1b2029; border: 2px solid #0c0e12; font: 700 10.5px var(--mono); color: #c3cad6; }
+.pw-sets button .pw-tyre { width: 18px; height: 18px; font-size: 9px; border-width: 2.5px; font-style: normal; }
+.pw-sets button.on { border-color: #facc15; color: #fff; background: #2b3445; }
+.pw-sets button.mounted { opacity: .55; }
+.tab.hidden { display: none; }
+#app .tabs:has(.tab.hidden) { grid-template-columns: repeat(3, 1fr); }

@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Pit Wall">
   <title>Pit Wall</title>
-  <link rel="manifest" href="manifest.webmanifest?v=1">
+  <link rel="manifest" href="manifest.webmanifest?v=2">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/style.css">
@@ -67,6 +67,7 @@
       <div class="paused-tag">PAUSE</div>
       <div class="mon-label">TRACK MAP · LIVE</div>
       <div id="pwAlert" class="pw-alert hidden"></div>
+      <div id="ffTag" class="pw-fftag hidden"></div>
     </section>
 
     <nav class="tabs">
@@ -146,11 +147,6 @@
         <button id="hqBtn" class="secondary-btn season-btn hidden">🏢 Teamzentrale</button>
         <button id="seasonBtn" class="secondary-btn season-btn hidden">🏆 Saison-Übersicht</button>
       </div>
-      <div class="setup st-card">
-        <div class="setup-label">DEIN TEAM</div>
-        <div id="teamList" class="pw-teams" role="listbox" aria-label="Team auswählen"></div>
-        <div id="teamInfo" class="pw-teaminfo"></div>
-      </div>
       <div id="gpCard" class="setup st-card">
         <div class="setup-label">GRAND PRIX</div>
         <div class="gp-preview">
@@ -159,6 +155,11 @@
           <div id="gpInfo" class="gp-info"></div>
         </div>
         <div id="gpList" class="gp-list" role="listbox" aria-label="Rennen auswählen"></div>
+      </div>
+      <div class="setup st-card">
+        <div class="setup-label">DEIN TEAM</div>
+        <div id="teamList" class="pw-teams" role="listbox" aria-label="Team auswählen"></div>
+        <div id="teamInfo" class="pw-teaminfo"></div>
       </div>
       <div class="setup-opts">
         <div class="setup-row st-card"><span class="setup-label">WETTER</span>
@@ -179,7 +180,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 8</div>
+      <div class="app-version">Version 9</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -235,6 +236,15 @@
         <button id="endWkBtn" class="secondary-btn hidden">Wochenende beenden</button>
         <button id="newRaceBtn" class="primary-btn">Zur Startseite</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Beide eigenen Fahrer ausgefallen: weiter ansehen oder simulieren -->
+  <div id="askScreen" class="overlay hidden">
+    <div class="sheet pw-notice">
+      <div class="pw-ntag">PIT WALL</div>
+      <div class="pw-ntext">Beide Fahrer sind ausgeschieden. Möchtest du das Rennen weiter ansehen oder bis zum Ende simulieren?</div>
+      <div class="sheet-actions"><button id="askWatch" class="secondary-btn">Weiter ansehen</button><button id="askSim" class="primary-btn">Simulieren</button></div>
     </div>
   </div>
 

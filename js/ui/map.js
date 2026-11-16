@@ -587,10 +587,18 @@ export class TrackMap {
       ctx.lineWidth = sel ? 2.5 : 1.5;
       ctx.strokeStyle = sel ? '#fff' : car.offTrack ? '#ffd12e' : '#0b0f17';
       ctx.stroke();
+      // Pit Wall: eigene Autos mit gelbem Ring
+      if (car.player) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 3.2, 0, Math.PI * 2);
+        ctx.lineWidth = 2.2;
+        ctx.strokeStyle = '#facc15';
+        ctx.stroke();
+      }
       this.hit.push({ id: car.id, x, y });
 
       const pos = posOf.get(car);
-      if (sel || this.showLabels || pos === 1 || this.zoom >= 2.5) {
+      if (sel || car.player || this.showLabels || pos === 1 || this.zoom >= 2.5) {
         const label = sel || pos === 1 ? `${pos} ${car.id}` : car.id;
         this.drawLabel(ctx, x, y, label, sel);
       }

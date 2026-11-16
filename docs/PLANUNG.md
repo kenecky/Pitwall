@@ -224,3 +224,24 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Fahrerbesetzungen bleiben vorerst gleich.
 - Teamzentrale: Reiter „Karriere“ (Ruf, Angebote mit Annehmen, nächste Saison, Verlauf).
 - Test: `node tests/career.mjs`
+
+### v9 – Icon, Reifenkontingent nach Reglement, Korrekturen
+- **Fehler behoben**: Nach „Weiter: Rennen“ blieb das Ergebnisfenster offen und lag über der Strategiewahl; ein zweites
+  „Weiter“ beendete das Wochenende und führte in ein neues Q1. Jetzt: Ergebnis wird sofort geschlossen, „Weiter“ wirkt
+  nur einmal je Session. Außerdem lädt ein Update die Seite nur noch neu, wenn die Startseite sichtbar ist (nicht während
+  Intro/Strategiewahl).
+- **Neues Icon A** (Teamfunk-Headset auf Rot-Orange) für App, Ladeseite und Startseite
+- **Reifenkontingent nach Reglement** (Quellen: formula1.com, f1chronicle): je Fahrer 13 Slick-Sätze (2 H / 3 M / 8 S),
+  Sprint-Wochenende 12 (2 H / 4 M / 6 S), 5 Intermediates, 2 Regenreifen. Nach dem Training Rückgabe von 6 Sätzen
+  (Sprint-Wochenende 2) – die meistgefahrenen, je ein Medium/Hard bleibt. Ohne Training: Trainings-Nutzung und Rückgabe
+  werden simuliert (7 Sätze für Quali + Rennen); ohne Qualifying zusätzlich gebrauchte Quali-Softs (~3 Runden).
+- **Satzwahl**: Training/Qualifying zeigen alle Sätze des Fahrers (neu / x Runden) zum Auswählen; im Rennen Satzwahl für den
+  nächsten Stopp unter den Mischungen. Jeder Fahrer hat eigene Sätze.
+- **Qualifying in Originallänge**: Q1 18 / Q2 15 / Q3 12 Min., Sprint-Qualifying 12 / 10 / 8 Min. (alle Dauer-Stufen)
+- **Vorspulen**: Qualifying – sind beide eigenen Fahrer ausgeschieden, wird der Rest simuliert (direkt zum Ergebnis).
+  Rennen – fallen beide aus, Rückfrage „Weiter ansehen“ oder „Simulieren“.
+- Eigene Fahrer auf der Karte mit gelbem Ring und Kürzel, in der Zeitentabelle deutlich markiert
+- CIRCLE-Reiter nur im Rennen (nicht in Training/Qualifying)
+- Fensterwechsel pausiert nicht mehr (Spiel läuft mit gleichem Tempo weiter, nur Speichern)
+- Startseite: Strecke über der Teamwahl (Intro startet an dieser Stelle; Bild wird vorher in den sichtbaren Bereich
+  gerollt), Fahrer je Zeile, Ziehen zum Neuladen im oberen Viertel (auch im Browser)

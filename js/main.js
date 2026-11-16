@@ -39,7 +39,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 8;
+export const VERSION = 9;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -249,6 +249,10 @@ function resetUi() {
   ui.lastMsg = 0;
   ui.noticeSeen = 0;
   ui.run = {};
+  ui.ffAsked = false;
+  ff = false;
+  $('ffTag').classList.add('hidden');
+  $('askScreen').classList.add('hidden');
 }
 
 // Auto kommt nach einer Ausfahrt in die Garage: Rückmeldung des Fahrers (Training) bzw. Rundenzeit (Qualifying)
@@ -545,7 +549,7 @@ function renderStart() {
   const t = TEAM_BY_ID[playerTeamId()];
   const drv = DRIVERS.filter(d => d.team === t.id);
   const bar = (label, v) => `<span>${label}</span><i><b style="width:${v}%"></b></i><span>${v}</span>`;
-  $('teamInfo').innerHTML = `<b>${esc(t.name)}</b> · ${drv.map(d => `${esc(d.first)} ${esc(d.last)} (#${d.number})`).join(' & ')}
+  $('teamInfo').innerHTML = `<b>${esc(t.name)}</b>${drv.map(d => `<div class="pw-drv">#${d.number} ${esc(d.first)} ${esc(d.last)}</div>`).join('')}
     <div class="pw-bars">${bar('AUTO', t.pace)}${bar('ZUVERL.', t.reliability)}${bar('BOXENCREW', t.pitCrew)}</div>`;
   // Rennen
   const list = $('gpList');
@@ -565,7 +569,7 @@ function renderStart() {
   for (const cb of $('sessionChecks').querySelectorAll('input')) cb.checked = cb.value === 'race' || parts.includes(cb.value);
   $('weekendSteps').innerHTML = wk.seq.map((k, i) => `<span class="wstep${i < wk.idx ? ' done' : i === wk.idx ? ' now' : ''}">${SESSION_SHORT[k]}</span>`).join('<span class="wsep">›</span>');
   const fired = Boolean(running && season.career && season.career.fired);
-  $('startBtn').textContent = sea && !season ? 'Saison starten' : fired ? 'Ohne Team – Angebote ansehen' : running && !entry ? `Saison beendet – weiter zu ${season.year + 1}` : wk.seq.length > 1 ? `Wochenende starten · ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
+  $('startBtn').textContent = sea && !season ? 'Saison starten' : fired ? 'Ohne Team – Angebote ansehen' : running && !entry ? `Saison beendet – weiter zu ${season.year + 1}` : wk.seq.length > 1 ? `Start: ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
   $('startBtn').disabled = false;
   if (running) $('teamInfo').insertAdjacentHTML('afterbegin', `<div class="pw-sum">Saison mit <b>${esc(t.name)}</b>${season.results.length ? ` · Teamwertung P${teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1} · ${season.teamPts[season.teamId] || 0} Punkte` : ' · noch kein Rennen gefahren'}</div>`);
   const wx = race.weather;
@@ -649,6 +653,12 @@ function setStartBusy(on) {
   $('startBtn').disabled = on;
 }
 function playIntro(done) {
+  // Streckenbild der Startseite sichtbar machen – dort beginnt das Intro (fließender Übergang)
+  const pv = $('trackPreview');
+  if (!$('startScreen').classList.contains('hidden')) {
+    const r = pv.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > window.innerHeight) pv.scrollIntoView({ block: 'center' });
+  }
   setStartBusy(true);
   requestAnimationFrame(() => setTimeout(() => loadScenery(race.track.def.id).then(sc => runIntro(done, sc)), 40));
 }
@@ -709,7 +719,15 @@ function startRace() {
 function frame(now) {
   const realDt = Math.min(0.25, (now - lastFrame) / 1000);
   lastFrame = now;
-  if (race && !paused) {
+  if (race && !paused && ff) {
+    // Vorspulen: so viele Schritte wie in ~30 ms passen, ohne Abbremsen
+    const t0 = performance.now();
+    while (race.phase !== 'finished' && performance.now() - t0 < 30) {
+      for (let k = 0; k < 40; k++) { race.step(); autoDirect(race); teamStep(race); radioStep(race); }
+    }
+    if (race.phase === 'finished') { ff = false; $('ffTag').classList.add('hidden'); }
+    for (const c of race.cars) prevD.set(c, c.d);
+  } else if (race && !paused) {
     acc += realDt * settings.speed;
     let n = 0;
     while (acc >= DT && n < 2000) {
@@ -746,6 +764,32 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// Vorspulen: Quali – beide eigenen Fahrer ausgeschieden; Rennen – beide ausgefallen (Rückfrage)
+let ff = false;
+function startFF(text) {
+  ff = true;
+  paused = false;
+  $('ffTag').textContent = text;
+  $('ffTag').classList.remove('hidden');
+  renderSpeedBtns();
+}
+function checkFastForward() {
+  if (ff || race.phase !== 'running' && race.phase !== 'chequered') return;
+  const mine = playerCars(race);
+  if (race.isSession) {
+    if (race.kind === 'fp' || ui.ffAsked) return;
+    const out = mine.every(c => c.retired || (c.elimSeg !== null && c.elimSeg !== undefined));
+    if (out && (race.segState === 'break' || race.segFlag)) { ui.ffAsked = true; startFF('⏩ Beide ausgeschieden – Rest wird simuliert …'); }
+    return;
+  }
+  if (!ui.ffAsked && mine.every(c => c.retired || c.dsq)) {
+    ui.ffAsked = true;
+    $('askScreen').classList.remove('hidden');
+  }
+}
+$('askWatch').addEventListener('click', () => $('askScreen').classList.add('hidden'));
+$('askSim').addEventListener('click', () => { $('askScreen').classList.add('hidden'); startFF('⏩ Rennen wird bis zum Ende simuliert …'); });
+
 // Wichtige Momente für den Teamchef: Neutralisierung, Schaden, Funk der eigenen Fahrer → Tempo runter
 let lastNeutral = null;
 function watchEvents() {
@@ -781,6 +825,10 @@ function watchEvents() {
 // ---------- Anzeige ----------
 function refreshUi() {
   if (!race) return;
+  const ct = document.querySelector('.tab[data-tab="circle"]');
+  ct.classList.toggle('hidden', race.isSession);
+  if (race.isSession && activeTab === 'circle') setTab('wall');
+  checkFastForward();
   updateStatus();
   checkNotices();
   renderWall();
@@ -871,6 +919,7 @@ function buildWall() {
         <div class="pw-cmp">${['S', 'M', 'H', 'I', 'W'].map(k => `<button class="${k}" data-cmp="${k}" aria-label="${COMPOUNDS[k].name}">${k}</button>`).join('')}</div>
         <button class="pw-boxbtn" data-act="box">BOX</button>
       </div>
+      <div class="pw-sets" data-f="rsets"></div>
       <div class="pw-rejoin" data-f="rejoin"></div>
  <div class="pw-hint" data-f="hint"></div>
       <div class="pw-label">FUNK AN ${c.id}</div>
@@ -997,6 +1046,11 @@ function renderWall() {
       b.classList.toggle('on', b.dataset.cmp === sel);
       b.disabled = gone || car.inPit;
     }
+    // Reifensatz für den nächsten Stopp (aus dem Kontingent des Fahrers)
+    if (car.nextSet && car.nextSet.c !== sel) car.nextSet = null;
+    const nset = car.nextSet || setsOf(wk, car.id, sel).find(x => x !== car.curSet) || null;
+    const nsig = `${sel}|${nset ? nset.id : 0}|${wk.sets[car.id].map(x => Math.round(x.laps)).join(',')}|${gone}`;
+    if (f('rsets').dataset.sig !== nsig) { f('rsets').dataset.sig = nsig; f('rsets').innerHTML = gone ? '' : setChips(car, nset ? nset.id : 0, 'data-rset', sel); }
     // Box-Knopf
     const bb = el.querySelector('[data-act="box"]');
     const late = (car.boxCall || due) && tooLateForBox(race, car) && !(car.boxCall && car.boxCall.lap);
@@ -1092,6 +1146,12 @@ $('wall').addEventListener('click', e => {
   const car = race.carById[el.dataset.car];
   if (b.dataset.msg) { answer(race, Number(b.dataset.msg), b.dataset.opt); renderWall(); return; }
   if (b.dataset.red) { redTyres(race, car, b.dataset.red); renderWall(); return; }
+  if (b.dataset.rset) {
+    const st = wk.sets[car.id].find(x => x.id === Number(b.dataset.rset));
+    if (st && st !== car.curSet) { car.nextSet = st; setStopCompound(car, st.c); }
+    renderWall();
+    return;
+  }
   if (b.dataset.pace) setPace(race, car, b.dataset.pace);
   else if (b.dataset.tac) setTactic(race, car, b.dataset.tac);
   else if (b.dataset.call) ownCall(race, car, b.dataset.call);
@@ -1128,11 +1188,19 @@ function runCfg(car) {
   if (!ui.run[car.id]) ui.run[car.id] = { c: race.weather.wetness > 0.15 ? bestCompound(race.weather.wetness, 20) : race.kind === 'fp' ? 'M' : 'S', fresh: race.kind !== 'fp', push: race.kind === 'fp' ? 3 : 1, fuel: race.kind === 'fp' ? 'high' : 'low' };
   return ui.run[car.id];
 }
+// Gewählter Reifensatz (oder automatisch: neuer Satz bevorzugt, im Training gebrauchter)
 function runSet(car) {
   const cfg = runCfg(car);
   const list = setsOf(wk, car.id, cfg.c);
+  const pick = cfg.setId && list.find(s => s.id === cfg.setId);
+  if (pick) return pick;
   const fresh = list.find(s => s.laps < 0.05), used = list.find(s => s.laps >= 0.05);
   return cfg.fresh ? fresh || used || null : used || fresh || null;
+}
+// Alle Sätze eines Fahrers als Auswahl-Chips (neu / gebraucht mit Runden)
+function setChips(car, selId, attr = 'data-setid', filter = null) {
+  const list = wk.sets[car.id].filter(s => !filter || s.c === filter).sort((a, b) => 'SMHIW'.indexOf(a.c) - 'SMHIW'.indexOf(b.c) || a.laps - b.laps);
+  return list.map(st => `<button ${attr}="${st.id}" class="${st.id === selId ? 'on' : ''}${st === car.curSet && !car.inGarage ? ' mounted' : ''}"><i class="pw-tyre ${st.c}">${st.c}</i>${st.laps < 0.05 ? 'neu' : `${Math.round(st.laps)} Rd`}</button>`).join('');
 }
 // Verkehrs-Prognose fürs Rausfahren: Autos auf der Aufwärmrunde und Autos, die gleich aus der Garage kommen
 function trafficForecast(car) {
@@ -1167,7 +1235,9 @@ function buildSessionWall() {
       <div class="pw-row"><span class="pw-tyre" data-f="tyre"></span><span class="pw-life"><b data-f="life"></b></span><span class="pw-meta" data-f="meta"></span></div>
       <div class="pw-label">AUSFAHRT</div>
       <div class="pw-cmp" data-f="cmp">${['S', 'M', 'H', 'I', 'W'].map(k => `<button class="${k}" data-rc="${k}">${k}<small></small></button>`).join('')}</div>
-      <div class="pw-seg ers"><button data-fresh="1">NEUER SATZ</button><button data-fresh="0">GEBRAUCHT</button><button data-auto="1">AUTO-PROGRAMM</button></div>
+      <div class="pw-label">REIFENSATZ WÄHLEN</div>
+      <div class="pw-sets" data-f="sets"></div>
+      <div class="pw-seg ers"><button data-auto="1">AUTO-PROGRAMM</button></div>
       <div class="pw-label">SCHNELLE RUNDEN${fp ? ' · SPRIT' : ''}</div>
       <div class="pw-seg">${RUN_PUSH[race.kind].map(n => `<button data-push="${n}">${n}</button>`).join('')}</div>
       ${fp ? '<div class="pw-seg ers"><button data-fuel="low">WENIG SPRIT</button><button data-fuel="high">VIEL SPRIT</button><span></span></div>' : ''}
@@ -1228,7 +1298,9 @@ function renderSessionWall() {
       b.classList.toggle('on', cfg.c === k);
       b.querySelector('small').textContent = sum[k].fresh;
     }
-    for (const b of el.querySelectorAll('[data-fresh]')) b.classList.toggle('on', String(cfg.fresh ? 1 : 0) === b.dataset.fresh);
+    const chosen = runSet(car);
+    const ssig = `${chosen ? chosen.id : 0}|${wk.sets[car.id].map(x => Math.round(x.laps)).join(',')}|${car.inGarage}`;
+    if (f('sets').dataset.sig !== ssig) { f('sets').dataset.sig = ssig; f('sets').innerHTML = setChips(car, chosen ? chosen.id : 0); }
     el.querySelector('[data-auto]').classList.toggle('on', Boolean(car.autoRuns));
     for (const b of el.querySelectorAll('[data-push]')) b.classList.toggle('on', Number(b.dataset.push) === cfg.push);
     for (const b of el.querySelectorAll('[data-fuel]')) b.classList.toggle('on', cfg.fuel === b.dataset.fuel);
@@ -1255,7 +1327,7 @@ function renderSessionWall() {
     else if (race.segFlag) hint = 'Zielflagge – nur bereits begonnene Runden zählen noch.';
     else if (car.inGarage && !fp && race.remaining < race.track.baseLap * 2.1 + 20 && !t) hint = 'Letzte Chance: Aufwärmrunde + schnelle Runde passen gerade noch!';
     else if (car.inGarage && race.remaining < race.track.baseLap * 1.3 + 25) hint = 'Zu spät – die schnelle Runde würde nicht mehr vor der Zielflagge beginnen.';
-    else if (car.inGarage && !fp && !cfg.fresh) hint = 'Gebrauchte Reifen sind langsamer – neue Softs bringen die beste Zeit.';
+    else if (car.inGarage && !fp && set && set.laps >= 0.05) hint = 'Gebrauchter Satz – langsamer als neue Softs.';
     else if (car.inGarage && !fp) hint = `Strecke wird schneller – späte Runden sind besser, aber riskanter (Verkehr, Rote Flagge).`;
     else if (car.inGarage && fp) hint = 'Mehrere Runden mit viel Sprit zeigen das Renntempo, wenig Sprit die Quali-Pace. Nach jeder Ausfahrt gibt der Fahrer Rückmeldung.';
     f('hint').textContent = hint;
@@ -1278,7 +1350,7 @@ function renderSessionWall() {
       }
     }
     // Kontingent
-    f('alloc').innerHTML = Object.entries(sum).map(([k, v]) => `<span><i class="pw-tyre ${k}">${k}</i> ${v.fresh} neu${v.used.length ? ` · ${v.used.length} gebr.` : ''}</span>`).join('');
+    f('alloc').innerHTML = Object.entries(sum).map(([k, v]) => `<span><i class="pw-tyre ${k}">${k}</i> ${v.fresh} neu${v.used.length ? ` · ${v.used.length} gebr.` : ''}</span>`).join('') + (wk.returned[car.id] ? `<span>${wk.returned[car.id]} Sätze nach dem Training zurückgegeben</span>` : '');
   }
 }
 
@@ -1287,8 +1359,8 @@ function sessionClick(e, b) {
   if (!el) return;
   const car = race.carById[el.dataset.car];
   const cfg = runCfg(car);
-  if (b.dataset.rc) cfg.c = b.dataset.rc;
-  else if (b.dataset.fresh) cfg.fresh = b.dataset.fresh === '1';
+  if (b.dataset.rc) { cfg.c = b.dataset.rc; cfg.setId = null; }
+  else if (b.dataset.setid) { const st = wk.sets[car.id].find(x => x.id === Number(b.dataset.setid)); if (st) { cfg.c = st.c; cfg.setId = st.id; } }
   else if (b.dataset.push) cfg.push = Number(b.dataset.push);
   else if (b.dataset.fuel) cfg.fuel = b.dataset.fuel;
   else if (b.dataset.auto) race.setAutoRuns(car, !car.autoRuns);
@@ -1406,6 +1478,7 @@ function showStrategy() {
   for (const c of cars) { stratOpts[c.id] = strategyOptions(race, c, wk); stratPick[c.id] = 'A'; }
   renderStrategy();
   $('startScreen').classList.add('hidden');
+  $('resultScreen').classList.add('hidden');
   $('stratScreen').classList.remove('hidden');
   $('stratScreen').scrollTop = 0;
 }
@@ -1476,6 +1549,10 @@ function showSessionResults() {
   $('resultScreen').classList.remove('hidden');
 }
 $('newRaceBtn').addEventListener('click', () => {
+  // Nur einmal pro beendeter Session (Doppeltipp / Fenster im Hintergrund)
+  if (!race || race.phase !== 'finished' || race.wkDone) return;
+  race.wkDone = true;
+  $('resultScreen').classList.add('hidden');
   // Saison: Schäden aller Sessions sammeln, Stimmung der Fahrer nach dem Rennen merken
   if (wk.season) {
     const u = damageFrom(race);
@@ -1672,10 +1749,8 @@ async function requestWakeLock() {
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && race && !paused) requestWakeLock();
-  if (document.visibilityState === 'hidden' && race && race.phase !== 'pre') {
-    if (race.phase !== 'finished') { paused = true; renderSpeedBtns(); }
-    autosave();
-  }
+  // Beim Wechsel in ein anderes Fenster läuft das Spiel weiter (nur speichern)
+  if (document.visibilityState === 'hidden' && race && race.phase !== 'pre') autosave();
 });
 function vibrate(pattern) {
   if (settings.vibrate === false || !navigator.vibrate) return;
@@ -1684,14 +1759,12 @@ function vibrate(pattern) {
 
 // Installierte App: auf der Startseite nach unten ziehen = neu laden (für Updates)
 (() => {
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  if (!standalone) return;
   const scr = $('startScreen'), ind = $('ptr');
   let y0 = null, dy = 0, x0 = 0;
   const atTop = () => scr.scrollTop <= 0 && [...scr.querySelectorAll('.sheet')].every(el => el.scrollTop <= 0);
   scr.addEventListener('touchstart', e => {
     const t = e.touches[0];
-    const ok = !scr.classList.contains('hidden') && atTop() && t.clientY < window.innerHeight / 3 && !e.target.closest('.gp-list');
+    const ok = !scr.classList.contains('hidden') && atTop() && t.clientY < window.innerHeight / 4 && !e.target.closest('.gp-list');
     y0 = ok ? t.clientY : null; x0 = t.clientX; dy = 0;
   }, { passive: true });
   scr.addEventListener('touchmove', e => {
@@ -1728,6 +1801,8 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   let reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloaded) return;
-    if (!race || race.phase === 'pre') { reloaded = true; location.reload(); }
+    // Nur auf der Startseite neu laden – nie während Intro, Strategiewahl oder einer Session
+    const onStart = !$('startScreen').classList.contains('hidden') && $('introScreen').classList.contains('hidden');
+    if ((!race || race.phase === 'pre') && onStart) { reloaded = true; location.reload(); }
   });
 }
