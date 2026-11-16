@@ -338,3 +338,14 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   ~0,9 s, Training bis ~0,6 s schneller; Regen/Nässe baut ihn wieder ab. Ersetzt die bisherige feste Zeitkurve.
 - **Ausfall in Training/Qualifying**: Fahrer-Reiter zeigt „AUSFALL“ mit Grund, alle Knöpfe gesperrt.
 - **Karte**: Im Qualifying ausgeschiedene Autos werden nicht mehr gezeichnet (weder Strecke noch Box).
+
+### v16 – Starts, Begründung für Neutralisierungen, Reifen hinter dem SC
+- **Starts**: ~11 % besonders gute Starts (Antrieb 1,14–1,24, Reaktion 0,13–0,2 s), ~11 % schlechte (Antrieb 0,72–0,84,
+  teils lange Reaktion). In den ersten ~1200 m zieht ein Auto mit deutlich besserem Start (Differenz > 0,12) mit 70 %
+  am Vordermann vorbei – mehrere Plätze möglich. Nach Runde 1 Meldung „Toller/Schlechter Start“ ab ±3 Plätzen.
+  Test: Ø 1,2 Plätze Änderung in Runde 1, ~3 Fahrer pro Rennen mit ≥ 3 Plätzen.
+- **Begründung im Log** bei Safety Car, VSC und roter Flagge („Grund für das Safety Car: … (T8, Sektor 6)“), auch bei
+  Reinigungsarbeiten mit Kehrmaschine.
+- **Reifenverschleiß unter Neutralisierung** (jetzt für alle Autos, live je Meter): hinter dem Safety Car 30 % einer
+  Rennrunde (−70 %), unter VSC 40 % (−60 %), unter Rot 30 %, in der Boxengasse 10 %. Begründung: rund 40 % langsamer,
+  kaum Last beim Bremsen und in Kurven. KI-Autos nutzen jetzt ebenfalls den Live-Verschleiß.

@@ -198,6 +198,10 @@ export class Race {
       c.d = -(6 + i * 8);
       c.reaction = r.range(0.18, 0.36) + (r.chance(0.08) ? r.range(0.2, 0.5) : 0);
       c.launch = r.range(0.92, 1.06);
+      // Pit Wall: ab und zu ein besonders guter oder schlechter Start (Durchdrehen, Reaktion)
+      const sx = r.next();
+      if (sx < 0.11) { c.launch = r.range(1.14, 1.24); c.reaction = r.range(0.13, 0.2); c.startKind = 'great'; }
+      else if (sx < 0.22) { c.launch = r.range(0.72, 0.84); c.reaction += r.chance(0.5) ? r.range(0.3, 0.6) : 0; c.startKind = 'bad'; }
       this.planStrategy(c, i);
       // Nasser Start: alle auf Intermediates bzw. Regenreifen
       if (this.weather.wetness > 0.2) {
@@ -336,7 +340,7 @@ export class Race {
     const C = COMPOUNDS[car.compound];
     const w = this.weather.wetness;
     // Verschleiß (bei kurzer Distanz schneller); eigene Autos: abhängig von der Tempo-Anweisung
-    const age = (car.player ? car.tyreWear : car.tyreAge) * this.wear;
+    const age = (car.tyreWear ?? car.tyreAge) * this.wear;
     let deg = age * C.deg * (C.wet && w < 0.3 ? 3 : 1);          // Regenreifen überhitzen auf trockener Strecke
     if (age > C.cliff) deg += (age - C.cliff) * 0.22;
     const dmg = car.damage === 'wing' ? 1.2 : 0;
@@ -450,8 +454,12 @@ export class Race {
       const prev = car.d;
       car.d += car.move;
       if (car.finished) { this.coolDown(car, prev); continue; }
-      // Pit Wall: Reifenverschleiß live (je gefahrenem Meter); unter Neutralisierung und in der Box kaum
-      if (car.player && car.move > 0) car.tyreWear += car.move / tr.L * (car.inPit ? 0.1 : this.neutral ? 0.35 : paceOf(car).wear * tacticOf(car).wear * (car.setupWear || 1));
+      // Pit Wall: Reifenverschleiß live (je gefahrenem Meter, alle Autos). Hinter dem Safety Car ~30 %, unter VSC ~40 %
+      // einer Rennrunde (deutlich langsamer, kaum Last beim Bremsen/in Kurven); in der Box fast nichts.
+      if (car.move > 0) {
+        const nf = this.neutral ? { sc: 0.3, vsc: 0.4, red: 0.3 }[this.neutral.type] : 1;
+        car.tyreWear += car.move / tr.L * (car.inPit ? 0.1 : nf * paceOf(car).wear * tacticOf(car).wear * (car.setupWear || 1));
+      }
       this.handleCrossings(car, prev);
       checkPendingIncident(this, car, prev);
       if (car.limp && !car.retired) updateLimp(this, car);
@@ -579,6 +587,14 @@ export class Race {
           continue;
         }
         const startPhase = A.d < A.launchUntil;
+        // Pit Wall: am Start zieht ein Auto mit deutlich besserem Start einfach vorbei (mehrere Plätze möglich)
+        if (!banned && startPhase && !this.isSession && B.lap === 0 && B.d < 1200 && B.launch - A.launch > 0.12) {
+          const key = `start:${A.id}`;
+          if (!B.tried.has(key)) {
+            B.tried.add(key);
+            if (this.rng.chance(0.7)) { this.startPass(B, A, { zone: 'Start' }); continue; }
+          }
+        }
         const slowA = banned
           ? A.v < 6 && B.desiredV > 15
           : !startPhase && B.desiredV > 40 && A.v < speedAt(tr, A.d) * 0.6;
@@ -880,6 +896,12 @@ export class Race {
       }
 
       onLineCrossed(this, car);
+      if (car.lap === 1 && !this.isSession && car.gridPos) {
+        const pos = this.standings().indexOf(car) + 1;
+        const d = car.gridPos - pos;
+        if (d >= 3) this.emit('info', `Toller Start von ${car.id}: von P${car.gridPos} auf P${pos} (+${d}).`, { cars: [car.id] });
+        else if (d <= -3 && !car.retired) this.emit('info', `Schlechter Start von ${car.id}: von P${car.gridPos} auf P${pos} (${d}).`, { cars: [car.id] });
+      }
       if (this.phase === 'running' && car.lap >= this.laps && !(this.neutral && this.neutral.type === 'red')) {
         this.phase = 'chequered';
         // VSC/SC bleiben bis zum letzten Auto im Ziel aktiv (Gefahr ist noch da). Das Safety Car selbst

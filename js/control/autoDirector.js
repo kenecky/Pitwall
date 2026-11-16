@@ -1,7 +1,7 @@
 // Pit Wall: Die Rennleitung arbeitet automatisch im Hintergrund (KI).
 // Start, Flaggen, VSC/Safety Car/rote Flagge, Einsatzfahrzeuge, Neustarts und Urteile der Kommissare.
 // Wird nach jedem Simulationsschritt aufgerufen (Browser und Node-Test gleich).
-import { NEED_LEVEL } from '../sim/hazards.js';
+import { NEED_LEVEL, cornerLabel } from '../sim/hazards.js';
 import { setSectorFlag } from './flags.js';
 import { decide, noFurtherAction } from './stewards.js';
 import { deployVSC, endVSC, deploySC, allowUnlap, scInThisLap, redFlag, restartRace, canRestart } from '../sim/neutral.js';
@@ -100,7 +100,7 @@ function securityFor(race, ad, t) {
     if (h.medical && !h.medicalDone && !s.medical && scOut) deployMedical(race, h.sector);
     if (h.needsSweeper && !h.swept && !s.sweeper && scOut) deploySweeper(race, h.sector);
     // Kehrmaschine ohne SC nötig? Dann wenigstens VSC → SC (macht neutralize über need)
-    if (h.needsSweeper && !h.swept && !scOut && race.phase === 'running' && !race.neutral && h.work !== null && h.work < h.workTotal * 0.5) deployVSC(race);
+    if (h.needsSweeper && !h.swept && !scOut && race.phase === 'running' && !race.neutral && h.work !== null && h.work < h.workTotal * 0.5 && deployVSC(race)) race.emit('rc', `Grund für das virtuelle Safety Car: Reinigung nötig – ${h.desc || 'Schmutz auf der Fahrbahn'}${h.corner ? ` (${cornerLabel(h.corner)})` : ''}.`);
   }
   // Aufräumen: Flaggen in Sektoren ohne offene Gefahr, Kräne zurück, Boxengasse auf
   for (let i = 0; i < race.flags.length; i++) {
@@ -131,9 +131,9 @@ function neutralize(race, ad, t) {
   const leader = race.standings()[0];
   const lapsLeft = race.laps - (leader ? leader.lap : 0);
 
-  if (need >= 5 && lvl < 5) { redFlag(race); ad.redStopAt = null; return; }
-  if (need === 4 && lvl < 4) { deploySC(race); ad.clearSince = null; return; }
-  if (need === 3 && lvl < 3) { deployVSC(race); ad.clearSince = null; return; }
+  if (need >= 5 && lvl < 5) { if (redFlag(race)) reason(race, open, 5, 'die rote Flagge'); ad.redStopAt = null; return; }
+  if (need === 4 && lvl < 4) { if (deploySC(race)) reason(race, open, 4, 'das Safety Car', needSweep); ad.clearSince = null; return; }
+  if (need === 3 && lvl < 3) { if (deployVSC(race)) reason(race, open, 3, 'das virtuelle Safety Car'); ad.clearSince = null; return; }
 
   if (!n) return;
   // Wie lange ist die Gefahr schon beseitigt (für das aktuelle Niveau)?
@@ -239,4 +239,25 @@ function sessionDirect(race, ad) {
     }
   }
   stewards(race, ad, t);
+}
+
+// Begründung der Rennleitung für VSC, Safety Car und rote Flagge (im Log)
+const TYPE_TEXT = {
+  crash: 'schwerer Unfall', stopped: 'liegengebliebenes Auto', spin: 'Dreher', slow: 'langsames Auto auf der Strecke',
+  debris: 'Trümmerteile auf der Strecke', oil: 'Öl auf der Fahrbahn', gravel: 'Kies auf der Fahrbahn', animal: 'Tier auf der Strecke',
+  manhole: 'loser Gullydeckel', weather: 'zu viel Wasser auf der Strecke', storm: 'Unwetter', heli: 'Rettungshubschrauber kann nicht fliegen',
+  puncture: 'Reifenteile auf der Strecke', wheel: 'verlorenes Rad auf der Strecke', pit: 'Hindernis in der Boxengasse',
+};
+function reason(race, open, level, what, sweep = false) {
+  const hs = open.filter(h => (NEED_LEVEL[h.need] || 0) >= level);
+  let h = hs.sort((a, b) => (NEED_LEVEL[b.need] || 0) - (NEED_LEVEL[a.need] || 0))[0];
+  let text;
+  if (!h && sweep) {
+    h = open.find(x => x.needsSweeper && !x.swept);
+    text = `Die Kehrmaschine muss auf die Strecke${h && h.corner ? ` (${cornerLabel(h.corner)})` : ''} – ${h ? (h.desc || TYPE_TEXT[h.type] || 'Reinigung') : 'Reinigung'}`;
+  } else if (h) {
+    const where = h.global ? '' : h.corner ? ` (${cornerLabel(h.corner)}, Sektor ${h.sector + 1})` : ` (Sektor ${h.sector + 1})`;
+    text = `${h.desc || TYPE_TEXT[h.type] || 'Gefahr auf der Strecke'}${where}`;
+  } else text = 'Gefahr auf der Strecke';
+  race.emit('rc', `Grund für ${what}: ${text}.`);
 }

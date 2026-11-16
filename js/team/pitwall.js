@@ -212,7 +212,7 @@ export function addStop(race, car, compound, inLaps = 5) {
 }
 
 // ---------- Reifen ----------
-const wearOf = (race, car) => (car.player ? car.tyreWear : car.tyreAge) * (race.wear || 1);
+const wearOf = (race, car) => (car.tyreWear ?? car.tyreAge) * (race.wear || 1);
 
 // Reifenzustand 0–100 % (100 = neu); an der „Klippe“ 15 %
 export function tyreLife(race, car) {
