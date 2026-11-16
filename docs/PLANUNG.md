@@ -285,3 +285,16 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   +6 % Ertrag je Stufe), Motorenprüfstand (Motor & Zuverlässigkeit +6 %), Simulator (Setup-Einschätzung 15 % genauer je
   Stufe), Boxencrew-Trainingszentrum (Boxencrew +1,5), Marketing & Hospitality (Sponsorangebote +7 %, mehr
   Verhandlungsspielraum), Fahrerzentrum (Fahrerstimmung +1 je Stufe und Wochenende).
+
+### v12 – Spieldatum und Kalender
+- **Spieldatum** (`season.date`): Vorsaison beginnt am 19. Januar; nach jedem Rennen steht das Datum auf dem Renntag.
+  Anzeige in der Kopfzeile der Teamzentrale.
+- **Dauer in Wochen**: Kleines Update 3 Wochen, großes Paket 7 Wochen (Technischer Direktor ≥ 85 und Entwicklungszentrum ab
+  Stufe 3 je −1 Woche); Gebäude Stufe 2–5: 4 / 6 / 9 / 12 Wochen. Jeweils mit Fertigstellungsdatum.
+- **Kalender** (Kachel 📅): alle kommenden Termine nach Monaten – Rennen (mit Sprint-Kennzeichen), Fertigstellung von
+  Entwicklungen und Gebäuden; dazu die letzten Ergebnisse der eigenen Fahrer. Hauptseite zeigt den nächsten Termin.
+- **„Weiter“ springt zum nächsten Termin**: Fertigstellung → Datum vorstellen, Upgrade/Gebäude übernehmen, Meldung auf der
+  Hauptseite; Rennen → Datum auf den Freitag, Rennwochenende startet (Fertiges bis dahin wird übernommen). Laufendes
+  Wochenende: „Wochenende fortsetzen“. Bei gleichem Datum kommen Fertigstellungen vor dem Rennen.
+- Vorsaison-Checkliste verschwindet, sobald alle Pflichtaufgaben erledigt sind.
+- Alte Spielstände: Datum wird aus dem nächsten Rennen geschätzt, laufende Projekte/Bauten bekommen ein Fertigstellungsdatum.

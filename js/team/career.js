@@ -109,6 +109,7 @@ export function acceptOffer(season, teams, drivers, teamId) {
 export function startNewSeason(old, teams, drivers, teamId = old.teamId) {
   const s = newSeason(teamId);
   s.year = old.year + 1;
+  s.date = `${s.year}-01-19`;
   s.career = { ...initCareer(old), offers: [], fired: false };
   if (!s.career.teams.includes(teamId)) s.career.teams.push(teamId);
   initManagement(s, teams, drivers);

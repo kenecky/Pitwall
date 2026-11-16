@@ -7,7 +7,7 @@ export const SPRINT_POINTS = [8, 7, 6, 5, 4, 3, 2, 1];
 export const SPRINT_TRACKS = ['shanghai', 'miami', 'montreal', 'silverstone', 'zandvoort', 'singapore'];
 
 export function newSeason(teamId) {
-  return { version: 1, year: 2026, teamId, round: 0, results: [], driverPts: {}, teamPts: {}, gridPen: {}, started: Date.now() };
+  return { version: 1, year: 2026, teamId, round: 0, results: [], driverPts: {}, teamPts: {}, gridPen: {}, started: Date.now(), date: '2026-01-19' };   // Vorsaison ab Mitte Januar
 }
 
 export function currentEntry(season) { return SEASON_2026[season.round] || null; }
@@ -38,6 +38,7 @@ export function recordWeekend(season, wk, drivers) {
   });
   season.gridPen = {};
   for (const p of wk.carry || []) season.gridPen[p.carId] = (season.gridPen[p.carId] || 0) + p.places;
+  season.date = `${season.year}${entry.date.slice(4)}`;   // Spieldatum: Renntag
   season.round++;
 }
 

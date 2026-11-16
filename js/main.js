@@ -28,7 +28,7 @@ import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
   extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
   migrateManagement, preseasonTasks, readyForRace, signTitle, signPartner, dropPartner, hire, chooseConcept, startSeason, devFactor, staffCostPerRace,
-  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildRounds, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
+  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
 } from './team/management.js';
 import {
   PACE, PACE_ORDER, ERS, ERS_ORDER, STRATEGISTS, playerCars, setPace, setErs, callBox, cancelBox, tooLateForBox, tyreLife, adviceFor,
@@ -41,7 +41,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 11;
+export const VERSION = 12;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -407,13 +407,14 @@ let hqTab = 'home';          // home | sponsors | staff | drivers | dev | car | 
 let hqNotes = [];
 let hqHire = null;           // Posten, für den gerade Bewerber angezeigt werden
 const HQ_SECTIONS = [
-  ['sponsors', '🤝', 'Sponsoren'], ['staff', '👥', 'Personal'], ['drivers', '🏎', 'Fahrer'], ['dev', '🔧', 'Entwicklung'],
+  ['calendar', '📅', 'Kalender'], ['sponsors', '🤝', 'Sponsoren'], ['staff', '👥', 'Personal'], ['drivers', '🏎', 'Fahrer'], ['dev', '🔧', 'Entwicklung'],
   ['buildings', '🏗', 'Gebäude'], ['car', '⚙️', 'Auto & Teile'], ['money', '💶', 'Finanzen'], ['board', '🏛', 'Vorstand & Karriere'], ['standings', '🏆', 'Wertung'],
 ];
 function showHQ(notes = null) {
   if (!season || !season.mgmt) return;
   migrateManagement(season, TEAMS);
   migrateBuildings(season);
+  migrateCalendar(season, SEASON_2026);
   if (notes) hqNotes = notes;
   if (hqTab === 'report') hqTab = 'home';
   if (hqTab === 'career') hqTab = 'board';
@@ -433,7 +434,8 @@ function tileStatus(k) {
     case 'staff': { const v = Object.keys(POSTS).filter(p => !m.posts[p]).length; return v ? [`${v} Posten frei`, 'bad'] : ['Alle Posten besetzt', '']; }
     case 'drivers': { const low = Object.values(m.drivers).filter(d => d.morale < 40).length; return low ? [`${low} Fahrer unzufrieden`, 'warn'] : ['Stimmung ok', '']; }
     case 'dev': return !m.concept ? ['Auto-Konzept fehlt!', 'bad'] : m.projects.length ? [`${m.projects.length} Projekt${m.projects.length > 1 ? 'e' : ''} läuft`, ''] : ['Keine Projekte', 'warn'];
-    case 'buildings': return m.construction ? [`Baustelle: ${BUILDINGS[m.construction.key].name} (${m.construction.rounds} Rennen)`, ''] : ['Keine Baustelle', 'warn'];
+    case 'buildings': return m.construction ? [`Baustelle bis ${fmtDate(m.construction.done)}`, ''] : ['Keine Baustelle', 'warn'];
+    case 'calendar': { const n = nextEvent(season, SEASON_2026, trackLabel); return n ? [`Nächster Termin: ${fmtDate(n.date)}`, ''] : ['Keine Termine', '']; }
     case 'car': return m.pu.age >= 6 ? [`Antrieb ${m.pu.age} Wochenenden alt`, 'warn'] : [`Flügel ${m.parts.wing} · Chassis ${m.parts.chassis}`, ''];
     case 'money': return [`${money(m.money)}`, m.money < 0 ? 'bad' : ''];
     case 'board': return [`Ruf ${m.board.rep} · Ziel P${m.board.target}`, m.board.rep < 25 ? 'bad' : ''];
@@ -447,15 +449,17 @@ function renderHQ() {
   const entry = currentEntry(season);
   $('hqTitle').innerHTML = hqTab === 'home' ? `<i style="background:${team.color}"></i>${esc(team.name)}` : `${HQ_SECTIONS.find(x => x[0] === hqTab)[1]} ${HQ_SECTIONS.find(x => x[0] === hqTab)[2]}`;
   $('hqBack').classList.toggle('hidden', hqTab === 'home');
-  $('hqHead').innerHTML = `<span>Saison ${season.year}${m.phase === 'preseason' ? ' · Vorsaison' : entry ? ` · Rennen ${entry.round}/${SEASON_2026.length}` : ' · beendet'}</span><span>Konto <b class="${m.money < 0 ? 'neg' : ''}">${money(m.money)}</b></span><span>Budget-Cap ${Math.round(m.spent)}/${CAP}</span>`;
+  $('hqHead').innerHTML = `<span>📅 <b>${fmtDate(season.date, true)}</b></span><span>Saison ${season.year}${m.phase === 'preseason' ? ' · Vorsaison' : entry ? ` · Rennen ${entry.round}/${SEASON_2026.length}` : ' · beendet'}</span><span>Konto <b class="${m.money < 0 ? 'neg' : ''}">${money(m.money)}</b></span><span>Budget-Cap ${Math.round(m.spent)}/${CAP}</span>`;
   let h = '';
   if (hqTab === 'home') {
-    if (m.phase === 'preseason') {
+    if (m.phase === 'preseason' && !readyForRace(season)) {
       h += `<div class="pw-mcard pw-hero"><b>Willkommen, Teamchef!</b><small>Bevor die Saison beginnt: Sponsoren, Personal und das Auto-Konzept festlegen.</small>
         <div class="pw-tasks">${preseasonTasks(season).map(t => `<button data-go="${t.key === 'partners' ? 'sponsors' : t.key}" class="${t.done ? 'done' : t.optional ? 'opt' : ''}"><i>${t.done ? '✓' : t.optional ? '○' : '!'}</i>${esc(t.text)}${t.optional && !t.done ? ' <small>(optional)</small>' : ''}</button>`).join('')}</div></div>`;
     } else if (hqNotes.length) {
       h += `<div class="pw-mcard">${hqNotes.map(n => `<div class="pw-note">${n}</div>`).join('')}</div>`;
     }
+    const nx = nextEvent(season, SEASON_2026, trackLabel);
+    if (nx) h += `<div class="pw-mcard pw-next"><small>NÄCHSTER TERMIN</small><b>${calIcon(nx)} ${fmtDate(nx.date, true)}</b><span>${esc(nx.text)}</span></div>`;
     h += `<div class="pw-tiles">${HQ_SECTIONS.map(([k, ic, n]) => { const [st, cls] = tileStatus(k); return `<button class="pw-tile" data-go="${k}"><span class="ic">${ic}</span><b>${n}</b><small class="${cls}">${st}</small></button>`; }).join('')}</div>`;
     if (m.report && m.report.log && m.phase !== 'preseason') h += `<div class="pw-label">BUCHUNGEN NACH RENNEN ${m.report.round}</div><table class="pw-res"><tbody>${m.report.log.map(l => `<tr><td>${esc(l.what)}</td><td style="text-align:right" class="${l.amount < 0 ? 'neg' : 'pos'}">${l.amount > 0 ? '+' : ''}${money(l.amount)}</td></tr>`).join('')}</tbody></table>`;
   } else if (hqTab === 'sponsors' && m.nego) {
@@ -506,17 +510,28 @@ function renderHQ() {
       h += `<div class="pw-mcard"><b>Konzept: ${CONCEPTS[m.concept].name}</b>${Object.entries(DEV).map(([k, d]) => hqBar(d.short, m.dev[k], 6, '#ff6a3d', m.dev[k].toFixed(1).replace('.', ','))).join('')}</div>`;
     }
     h += '<div class="pw-label">UPGRADES</div>' + Object.entries(DEV).map(([k, d]) => `<div class="pw-mcard"><b>${d.name}</b><small>${d.hint} · Ertrag ×${devFactor(m, k).toFixed(2).replace('.', ',')} durch dein Personal</small>
-      <div class="pw-hqbtns">${Object.entries(DEV_SIZE).map(([s, z]) => `<button data-dev="${k}" data-size="${s}">${z.name}<small>${money(z.cost)} · ${z.rounds} Rennen · +${(z.gain * devFactor(m, k)).toFixed(1).replace('.', ',')}</small></button>`).join('')}</div></div>`).join('')
-      + `<div class="pw-label">LAUFENDE PROJEKTE (max. ${maxProjects(bLvl(m, 'factory'))} – Entwicklungszentrum)</div>${m.projects.length ? m.projects.map(p => `<div class="pw-mcard"><b>${DEV[p.type].name}</b><small>${DEV_SIZE[p.size].name} · fertig in ${p.rounds} Rennen · +${p.gain.toFixed(2).replace('.', ',')}</small></div>`).join('') : '<div class="pw-hint">Keine.</div>'}
+      <div class="pw-hqbtns">${Object.entries(DEV_SIZE).map(([s, z]) => `<button data-dev="${k}" data-size="${s}">${z.name}<small>${money(z.cost)} · ${projectWeeks(m, s)} Wochen · +${(z.gain * devFactor(m, k)).toFixed(1).replace('.', ',')}</small></button>`).join('')}</div></div>`).join('')
+      + `<div class="pw-label">LAUFENDE PROJEKTE (max. ${maxProjects(bLvl(m, 'factory'))} – Entwicklungszentrum)</div>${m.projects.length ? m.projects.map(p => `<div class="pw-mcard"><b>${DEV[p.type].name}</b><small>${DEV_SIZE[p.size].name} · fertig am ${fmtDate(p.done, true)} (in ${weeksBetween(season.date, p.done).toString().replace('.', ',')} Wochen) · +${p.gain.toFixed(2).replace('.', ',')}</small></div>`).join('') : '<div class="pw-hint">Keine.</div>'}
       <div class="pw-hint">Die anderen Teams entwickeln auch – wer stehen bleibt, fällt zurück.</div>`;
+  } else if (hqTab === 'calendar') {
+    const ev = calendarEvents(season, SEASON_2026, trackLabel);
+    const past = season.results.slice(-3).map(r => ({ date: raceDate(season, SEASON_2026[r.round - 1]), kind: 'done', text: `${trackLabel(r.track)} – ${DRIVERS.filter(d => d.team === season.teamId).map(d => `${d.id} ${finishOf(r.race, d.id) || '–'}`).join(', ')}` }));
+    let month = '';
+    h = `<div class="pw-hint">Heute: <b>${fmtDate(season.date, true)}</b>. Mit dem Knopf auf der Hauptseite geht es zum nächsten Termin.</div><div class="pw-cal">`
+      + [...past, ...ev].map(e => {
+        const mo = new Date(`${e.date}T12:00:00Z`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+        const head = mo !== month ? `<div class="pw-calm">${mo}</div>` : '';
+        month = mo;
+        return `${head}<div class="pw-cale ${e.kind}"><span class="d">${new Date(`${e.date}T12:00:00Z`).getUTCDate()}.</span><span class="i">${calIcon(e)}</span><span class="t">${e.kind === 'race' ? `<b>Rennen ${e.round}</b> · ` : ''}${esc(e.text)}${e.kind === 'race' && SPRINT_TRACKS.includes(e.track) ? ' <small>Sprint</small>' : ''}</span></div>`;
+      }).join('') + '</div>';
   } else if (hqTab === 'buildings') {
     const c = m.construction;
-    h = (c ? `<div class="pw-mcard pw-hero"><b>🏗 Baustelle: ${BUILDINGS[c.key].name} → Stufe ${c.lvl}</b>${hqBar('FORTSCHRITT', c.total - c.rounds, c.total, '#ff6a3d', `noch ${c.rounds} Rennen`)}</div>` : '<div class="pw-hint">Es kann immer nur ein Gebäude gleichzeitig gebaut werden. Investitionen zählen nicht zur Budgetobergrenze, der Unterhalt schon.</div>')
+    h = (c ? `<div class="pw-mcard pw-hero"><b>🏗 Baustelle: ${BUILDINGS[c.key].name} → Stufe ${c.lvl}</b>${hqBar('FORTSCHRITT', weeksBetween(c.start || season.date, season.date), Math.max(0.1, weeksBetween(c.start || season.date, c.done)), '#ff6a3d', `fertig am ${fmtDate(c.done)}`)}</div>` : '<div class="pw-hint">Es kann immer nur ein Gebäude gleichzeitig gebaut werden. Investitionen zählen nicht zur Budgetobergrenze, der Unterhalt schon.</div>')
       + Object.entries(BUILDINGS).map(([k, b]) => {
         const l = bLvl(m, k);
         const next = l + 1;
         return `<div class="pw-mcard"><b>${b.icon} ${b.name}</b> <span class="st">${'★'.repeat(l)}${'☆'.repeat(BUILD_MAX - l)}</span><small>Jetzt: ${b.eff(l)}${next <= BUILD_MAX ? `<br>Stufe ${next}: ${b.eff(next)}` : '<br>Höchste Stufe erreicht.'}</small>
-          ${next <= BUILD_MAX ? `<div class="pw-hqbtns"><button class="go" data-build="${k}" ${c ? 'disabled' : ''}>Ausbauen<small>${money(buildCost(next))} · ${buildRounds(next)} Rennen</small></button></div>` : ''}</div>`;
+          ${next <= BUILD_MAX ? `<div class="pw-hqbtns"><button class="go" data-build="${k}" ${c ? 'disabled' : ''}>Ausbauen<small>${money(buildCost(next))} · ${buildWeeks(next)} Wochen</small></button></div>` : ''}</div>`;
       }).join('');
   } else if (hqTab === 'car') {
     h = '<div class="pw-label">ERSATZTEILE</div>' + Object.entries(PARTS).map(([k, p]) => `<div class="pw-mcard"><b>${p.name}</b> · ${m.parts[k]} auf Lager<small>${money(p.price)} pro Stück · ohne Lager Eilfertigung zum doppelten Preis</small>
@@ -542,10 +557,17 @@ function renderHQ() {
   const go = $('hqGo');
   const c = initCareer(season);
   if (seasonOver(season) || c.fired) { go.textContent = c.fired ? 'Ohne Team – Angebote unter Vorstand & Karriere' : `Saison ${season.year + 1} – unter Vorstand & Karriere`; go.disabled = true; }
-  else if (m.phase === 'preseason') { go.textContent = readyForRace(season) ? `Saison starten · ${esc(TRACKS[entry.track].grandPrix.replace('Großer Preis ', 'GP '))}` : 'Erst die Aufgaben erledigen'; go.disabled = !readyForRace(season); }
+  else if (m.phase === 'preseason' && !readyForRace(season)) { go.textContent = 'Erst die Aufgaben erledigen'; go.disabled = true; }
   else if (savedGame && savedGame.mode === 'season') { go.textContent = 'Wochenende fortsetzen'; go.disabled = false; }
-  else { go.textContent = `Weiter zum ${TRACKS[entry.track].grandPrix.replace('Großer Preis ', 'GP ')}`; go.disabled = false; }
+  else {
+    const nx = nextEvent(season, SEASON_2026, trackLabel);
+    go.innerHTML = nx ? `Weiter · ${fmtDate(nx.date)} · ${nx.kind === 'race' ? `${esc(nx.text)}` : nx.kind === 'dev' ? 'Upgrade fertig' : 'Bau fertig'}` : 'Weiter';
+    go.disabled = !nx;
+  }
 }
+const trackLabel = id => TRACKS[id].grandPrix.replace('Großer Preis ', 'GP ');
+const calIcon = e => ({ race: '🏁', dev: '🔧', build: '🏗', done: '✓' }[e.kind] || '•');
+
 // Sponsoren-Verhandlung
 function negoHtml(n) {
   const k = n.kind === 'title' ? 'perRace' : 'fee';
@@ -603,13 +625,27 @@ $('hqClose').addEventListener('click', () => {
   $('hqScreen').classList.add('hidden');
   renderStart();
 });
+// Weiter zum nächsten Termin im Kalender: Rennen → Wochenende starten, sonst Fertigstellung übernehmen
 $('hqGo').addEventListener('click', () => {
   const m = season.mgmt;
-  if (m.phase === 'preseason') { const err = startSeason(season); if (err) { toast(err); return; } saveSeason(season); }
-  $('hqScreen').classList.add('hidden');
-  if (savedGame && savedGame.mode === 'season') { resumeGame(); return; }
-  newRace();
-  startRace();
+  if (savedGame && savedGame.mode === 'season') { $('hqScreen').classList.add('hidden'); resumeGame(); return; }
+  const nx = nextEvent(season, SEASON_2026, trackLabel);
+  if (!nx) return;
+  if (nx.kind === 'race') {
+    if (m.phase === 'preseason') { const err = startSeason(season); if (err) { toast(err); return; } }
+    const notes = advanceTo(season, addDays(nx.date, -2));   // Freitag des Rennwochenendes
+    saveSeason(season);
+    if (notes.length) { hqNotes = notes; toast(notes[0], 3000); }
+    $('hqScreen').classList.add('hidden');
+    newRace();
+    startRace();
+    return;
+  }
+  hqNotes = advanceTo(season, nx.date);
+  saveSeason(season);
+  hqTab = 'home';
+  renderHQ();
+  $('hqBody').scrollTop = 0;
 });
 $('hqBody').addEventListener('click', async e => {
   const b = e.target.closest('button');
@@ -638,12 +674,12 @@ $('hqBody').addEventListener('click', async e => {
   else if (b.dataset.concept) { const c = CONCEPTS[b.dataset.concept]; if (!(await pwConfirm(c.name, `${c.hint}. Das Konzept gilt für die ganze Saison und kostet ${money(CONCEPT_COST)}.`, 'Festlegen'))) return; err = chooseConcept(season, b.dataset.concept); }
   else if (b.dataset.dev) {
     const z = DEV_SIZE[b.dataset.size], d = DEV[b.dataset.dev];
-    if (!(await pwConfirm(`${d.name}: ${z.name}`, `Kosten ${money(z.cost)} (Budgetobergrenze) · Dauer ${z.rounds} Rennen · Ertrag ca. +${(z.gain * devFactor(m, b.dataset.dev)).toFixed(1).replace('.', ',')}. Jetzt starten?`, 'Starten'))) return;
+    if (!(await pwConfirm(`${d.name}: ${z.name}`, `Kosten ${money(z.cost)} (Budgetobergrenze) · Dauer ${projectWeeks(m, b.dataset.size)} Wochen (fertig am ${fmtDate(addDays(season.date, projectWeeks(m, b.dataset.size) * 7))}) · Ertrag ca. +${(z.gain * devFactor(m, b.dataset.dev)).toFixed(1).replace('.', ',')}. Jetzt starten?`, 'Starten'))) return;
     err = startProject(season, b.dataset.dev, b.dataset.size);
   }
   else if (b.dataset.build) {
     const k = b.dataset.build, l = bLvl(m, k) + 1;
-    if (!(await pwConfirm(`${BUILDINGS[k].name} auf Stufe ${l}`, `${BUILDINGS[k].eff(l)}. Kosten ${money(buildCost(l))}, Bauzeit ${buildRounds(l)} Rennen. Bauen?`, 'Bauen'))) return;
+    if (!(await pwConfirm(`${BUILDINGS[k].name} auf Stufe ${l}`, `${BUILDINGS[k].eff(l)}. Kosten ${money(buildCost(l))}, Bauzeit ${buildWeeks(l)} Wochen (fertig am ${fmtDate(addDays(season.date, buildWeeks(l) * 7))}). Bauen?`, 'Bauen'))) return;
     err = startBuilding(season, k);
   }
   else if (b.dataset.part) {

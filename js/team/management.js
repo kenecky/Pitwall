@@ -15,8 +15,8 @@ export const DEV = {
   rel:   { name: 'Zuverlässigkeit',  short: 'ZUV.',  hint: 'weniger Defekte' },
 };
 export const DEV_SIZE = {
-  small: { name: 'Kleines Update', cost: 4, rounds: 2, gain: 0.6 },
-  big:   { name: 'Großes Paket',   cost: 11, rounds: 4, gain: 1.7 },
+  small: { name: 'Kleines Update', cost: 4, weeks: 3, gain: 0.6 },
+  big:   { name: 'Großes Paket',   cost: 11, weeks: 7, gain: 1.7 },
 };
 export const STAFF = {
   crew: { name: 'Boxencrew',   hint: 'kürzere Boxenstopps', pay: 0.3 },
@@ -181,9 +181,9 @@ export const BUILDINGS = {
 };
 export const BUILD_MAX = 5;
 const BUILD_COST = [0, 0, 8, 14, 22, 32];      // Kosten für Stufe 2…5
-const BUILD_ROUNDS = [0, 0, 2, 3, 4, 5];       // Bauzeit in Rennwochenenden
+const BUILD_WEEKS = [0, 0, 4, 6, 9, 12];       // Bauzeit in Wochen
 export const buildCost = lvl => BUILD_COST[lvl] || 0;
-export const buildRounds = lvl => BUILD_ROUNDS[lvl] || 0;
+export const buildWeeks = lvl => BUILD_WEEKS[lvl] || 0;
 export function maxProjects(l) { return l >= 4 ? 3 : l >= 2 ? 2 : 1; }
 function initBuildings(tier) {
   const l = { top: 3, mid: 2, back: 1 }[tier] || 2;
@@ -199,7 +199,7 @@ export function startBuilding(season, key) {
   const cost = buildCost(next);
   if (m.money < cost) return 'Nicht genug Geld.';
   spend(m, cost, `Bau: ${BUILDINGS[key].name} Stufe ${next}`, false);
-  m.construction = { key, lvl: next, rounds: buildRounds(next), total: buildRounds(next) };
+  m.construction = { key, lvl: next, start: season.date, done: addDays(season.date, buildWeeks(next) * 7) };
   return null;
 }
 
@@ -326,9 +326,9 @@ export function startProject(season, type, size) {
   if (m.money < s.cost) return 'Nicht genug Geld.';
   if (capLeft(m) < s.cost) return 'Das würde die Budgetobergrenze überschreiten.';
   spend(m, s.cost, `${DEV[type].name}: ${s.name}`);
-  const rounds = Math.max(1, s.rounds - (postRating(m, 'td') >= 85 ? 1 : 0) - (bLvl(m, 'factory') >= 3 ? 1 : 0));
+  const weeks = projectWeeks(m, size);
   const gain = s.gain * devFactor(m, type);
-  m.projects.push({ type, size, rounds, total: rounds, gain: Math.round(gain * 100) / 100 });
+  m.projects.push({ type, size, start: season.date, done: addDays(season.date, weeks * 7), gain: Math.round(gain * 100) / 100 });
   return null;
 }
 
@@ -439,23 +439,11 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
   // Gebäude: Unterhalt (Betrieb), Baufortschritt, Fahrerzentrum
   const upkeep = Object.values(m.buildings || {}).reduce((sum, l) => sum + l * 0.08, 0);
   spend(m, upkeep, 'Unterhalt der Gebäude');
-  if (m.construction && --m.construction.rounds <= 0) {
-    m.buildings[m.construction.key] = m.construction.lvl;
-    notes.push(`Fertig gebaut: ${BUILDINGS[m.construction.key].name} Stufe ${m.construction.lvl}.`);
-    m.construction = null;
-  }
   for (const d of Object.values(m.drivers)) d.morale = clamp(d.morale + (bLvl(m, 'drivers') - 1), 0, 100);
   // Antriebseinheit altert
   m.pu.age++;
   if (m.pu.age >= 6) notes.push(`Die Antriebseinheit hat ${m.pu.age} Wochenenden hinter sich – das Defektrisiko steigt.`);
 
-  // Entwicklung: Projekte fertig?
-  for (const p of m.projects) p.rounds--;
-  for (const p of m.projects.filter(x => x.rounds <= 0)) {
-    m.dev[p.type] = Math.round((m.dev[p.type] + p.gain) * 100) / 100;
-    notes.push(`Upgrade fertig: ${DEV[p.type].name} +${p.gain.toFixed(1).replace('.', ',')}.`);
-  }
-  m.projects = m.projects.filter(x => x.rounds > 0);
   // KI-Teams entwickeln auch (reiche Teams etwas schneller)
   for (const t of teams) {
     if (t.id === season.teamId) continue;
@@ -602,4 +590,70 @@ export function negoSign(season) {
 }
 export function negoCancel(season) {
   season.mgmt.nego = null;
+}
+
+// ---------- Kalender: Spieldatum, Termine, Fertigstellungen ----------
+export function addDays(iso, d) {
+  const t = new Date(`${iso}T12:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + d);
+  return t.toISOString().slice(0, 10);
+}
+export function fmtDate(iso, long = false) {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('de-DE', long ? { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' } : { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+export function weeksBetween(a, b) {
+  return Math.max(0, Math.round((new Date(`${b}T12:00:00Z`) - new Date(`${a}T12:00:00Z`)) / 86400000 / 7 * 10) / 10);
+}
+// Dauer eines Entwicklungsprojekts (Wochen): Technischer Direktor ≥ 85 und Entwicklungszentrum ab Stufe 3 je −1
+export function projectWeeks(m, size) {
+  return Math.max(1, DEV_SIZE[size].weeks - (postRating(m, 'td') >= 85 ? 1 : 0) - (bLvl(m, 'factory') >= 3 ? 1 : 0));
+}
+// Renntermin (Sonntag) eines Kalendereintrags im Saisonjahr
+export function raceDate(season, entry) { return `${season.year}${entry.date.slice(4)}`; }
+
+// Alte Spielstände: Datum und Fertigstellungstermine ergänzen
+export function migrateCalendar(season, calendar) {
+  const m = season.mgmt;
+  if (!season.date) {
+    const e = calendar[season.round];
+    season.date = e ? addDays(raceDate(season, e), season.round === 0 ? -42 : -10) : `${season.year}-12-01`;
+  }
+  if (!m) return;
+  for (const p of m.projects) if (!p.done) { p.done = addDays(season.date, (p.rounds || 1) * 14); delete p.rounds; delete p.total; }
+  if (m.construction && !m.construction.done) { m.construction.done = addDays(season.date, (m.construction.rounds || 1) * 14); delete m.construction.rounds; delete m.construction.total; }
+}
+
+// Alle kommenden Termine (sortiert): Rennen, Entwicklungen, Gebäude
+export function calendarEvents(season, calendar, trackName) {
+  const m = season.mgmt;
+  const ev = [];
+  calendar.forEach((e, i) => {
+    if (i < season.round) return;
+    ev.push({ date: raceDate(season, e), kind: 'race', round: e.round, track: e.track, text: trackName(e.track) });
+  });
+  for (const p of (m && m.projects) || []) ev.push({ date: p.done, kind: 'dev', text: `${DEV[p.type].name}: ${DEV_SIZE[p.size].name} fertig` });
+  if (m && m.construction) ev.push({ date: m.construction.done, kind: 'build', text: `${BUILDINGS[m.construction.key].name} Stufe ${m.construction.lvl} fertig` });
+  // bei gleichem Datum: Fertigstellungen vor dem Rennen
+  return ev.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'race') - (b.kind === 'race'));
+}
+export function nextEvent(season, calendar, trackName) {
+  return calendarEvents(season, calendar, trackName)[0] || null;
+}
+
+// Zum Datum vorspulen: alles Fertige übernehmen, Meldungen zurückgeben
+export function advanceTo(season, date) {
+  const m = season.mgmt;
+  const notes = [];
+  if (date > season.date) season.date = date;
+  for (const p of m.projects.filter(x => x.done <= season.date)) {
+    m.dev[p.type] = Math.round((m.dev[p.type] + p.gain) * 100) / 100;
+    notes.push(`🔧 Upgrade fertig: ${DEV[p.type].name} +${p.gain.toFixed(1).replace('.', ',')} – wirkt ab dem nächsten Rennen.`);
+  }
+  m.projects = m.projects.filter(x => x.done > season.date);
+  if (m.construction && m.construction.done <= season.date) {
+    m.buildings[m.construction.key] = m.construction.lvl;
+    notes.push(`🏗 Fertig gebaut: ${BUILDINGS[m.construction.key].name} Stufe ${m.construction.lvl}.`);
+    m.construction = null;
+  }
+  return notes;
 }

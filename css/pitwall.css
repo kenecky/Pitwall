@@ -350,3 +350,17 @@
 .pw-nlog > div:first-child { border: 1px solid rgba(255,106,61,.45); }
 .pw-mgr .pw-hqbtns button:disabled { opacity: .4; }
 .pw-mgr .pw-hqbtns button small { display: block; margin-top: 2px; }
+
+/* v12: Kalender */
+.pw-next { display: grid; gap: 2px; border-color: rgba(255,106,61,.45); }
+.pw-next small { font: 800 10.5px system-ui, sans-serif; letter-spacing: .14em; color: #ffb08a; }
+.pw-next span { color: #c9cdd8; font-size: 13px; }
+.pw-cal { margin-top: 8px; }
+.pw-calm { margin: 14px 0 6px; font: 800 12px system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #ffb08a; }
+.pw-cale { display: grid; grid-template-columns: 34px 26px 1fr; align-items: center; gap: 6px; min-height: 42px; padding: 6px 10px; margin-top: 4px; border-radius: 12px; background: var(--pw-card); border: 1px solid var(--pw-line); font-size: 13px; }
+.pw-cale .d { font: 800 15px system-ui, sans-serif; color: #fff; }
+.pw-cale .i { font-size: 16px; }
+.pw-cale.race { border-color: rgba(255,106,61,.35); }
+.pw-cale.dev, .pw-cale.build { background: rgba(56,189,248,.08); border-color: rgba(56,189,248,.3); }
+.pw-cale.done { opacity: .55; }
+.pw-cale small { color: #ffb08a; font-weight: 700; }
