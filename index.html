@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0f17">
+  <meta name="theme-color" content="#0e1017">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,18 +16,17 @@
   <link rel="stylesheet" href="css/pitwall.css">
   <!-- Ladeseite: sofort sichtbar, bis alles geladen und die Startseite fertig gezeichnet ist -->
   <style>
-    #boot { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: #15181d; color: #f1f4f8;
+    #boot { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; color: #f6f7fb;
+      background: radial-gradient(120% 70% at 50% 0%, rgba(255,72,40,.35), rgba(255,72,40,0) 60%), radial-gradient(90% 60% at 50% 110%, rgba(176,0,60,.35), rgba(176,0,60,0) 60%), #0e1017;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; transition: opacity .35s ease; }
     #boot.gone { opacity: 0; pointer-events: none; }
-    #boot::before, #boot::after { content: ''; position: absolute; left: 0; right: 0; height: 8px; background: repeating-linear-gradient(-45deg, #facc15 0 10px, #15181d 10px 20px); }
-    #boot::before { top: 0; } #boot::after { bottom: 0; }
     #boot .bt-in { display: flex; flex-direction: column; align-items: center; width: min(260px, 72vw); }
-    #boot .bt-logo { width: 92px; height: 92px; border-radius: 20px; box-shadow: 0 14px 34px -14px rgba(0,0,0,.7); animation: btPuls 1.6s ease-in-out infinite; }
-    #boot .bt-name { margin-top: 16px; font: 800 20px ui-monospace, "RC Mono", monospace; letter-spacing: .14em; }
-    #boot .bt-sub { margin-top: 2px; font-size: 12px; color: #aab3c2; }
-    #boot .bt-bar { width: 100%; height: 6px; margin-top: 24px; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; }
-    #boot .bt-bar i { display: block; height: 100%; width: 6%; border-radius: 3px; background: #facc15; transition: width .2s ease-out; }
-    #boot .bt-text { margin-top: 10px; font-size: 12.5px; color: #c3cad6; min-height: 17px; }
+    #boot .bt-logo { width: 104px; height: 104px; border-radius: 26px; box-shadow: 0 18px 48px -12px rgba(255,72,40,.65); animation: btPuls 1.6s ease-in-out infinite; }
+    #boot .bt-name { margin-top: 18px; font: 900 24px system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: .16em; }
+    #boot .bt-sub { margin-top: 4px; font-size: 12px; color: #c2c7d3; letter-spacing: .08em; }
+    #boot .bt-bar { width: 100%; height: 6px; margin-top: 26px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+    #boot .bt-bar i { display: block; height: 100%; width: 6%; border-radius: 3px; background: linear-gradient(90deg, #ff4a28, #ff9a3c); transition: width .2s ease-out; }
+    #boot .bt-text { margin-top: 10px; font-size: 12.5px; color: #aab0bf; min-height: 17px; }
     @keyframes btPuls { 50% { transform: scale(1.05); } }
     @media (prefers-reduced-motion: reduce) { #boot .bt-logo { animation: none; } }
   </style>
@@ -180,7 +179,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 9</div>
+      <div class="app-version">Version 10</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -191,17 +190,16 @@
     </div>
   </div>
 
-  <div id="hqScreen" class="overlay hidden">
-    <div class="sheet">
-      <h2 class="sheet-title">🏢 Teamzentrale</h2>
-      <div id="hqHead" class="pw-hqhead"></div>
-      <div id="hqTabs" class="season-tabs pw-hqtabs"></div>
-      <div id="hqBody" class="pw-hqbody"></div>
-      <div class="sheet-actions">
-        <button id="hqSeasonBtn" class="secondary-btn">🏆 Wertung</button>
-        <button id="hqCloseBtn" class="primary-btn">Schließen</button>
-      </div>
-    </div>
+  <!-- Teamzentrale: Vollbild-Menü des Teamchefs (Saison) -->
+  <div id="hqScreen" class="pw-mgr hidden">
+    <header class="pw-mgr-top">
+      <button id="hqBack" class="pw-mgr-ic hidden" aria-label="Zurück">‹</button>
+      <div id="hqTitle" class="pw-mgr-title"></div>
+      <button id="hqClose" class="pw-mgr-ic" aria-label="Zur Startseite">✕</button>
+    </header>
+    <div id="hqHead" class="pw-mgr-head"></div>
+    <main id="hqBody" class="pw-mgr-body"></main>
+    <footer class="pw-mgr-foot"><button id="hqGo" class="primary-btn">Weiter</button></footer>
   </div>
 
   <div id="seasonScreen" class="overlay hidden">

@@ -10,7 +10,7 @@ export const OPS = 5.6;                 // Grundbetrieb pro Rennwochenende (zäh
 const POS_POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 
 export const DEV = {
-  aero:  { name: 'Aerodynamik',      short: 'AERO',  hint: 'mehr Tempo, vor allem auf kurvigen Strecken' },
+  aero:  { name: 'Chassis & Aero',   short: 'CHASSIS', hint: 'mehr Tempo, vor allem auf kurvigen Strecken' },
   motor: { name: 'Motor',            short: 'MOTOR', hint: 'mehr Tempo, vor allem auf schnellen Strecken' },
   rel:   { name: 'Zuverlässigkeit',  short: 'ZUV.',  hint: 'weniger Defekte' },
 };
@@ -22,6 +22,26 @@ export const STAFF = {
   crew: { name: 'Boxencrew',   hint: 'kürzere Boxenstopps', pay: 0.3 },
   eng:  { name: 'Ingenieure',  hint: 'schnellere Entwicklung, genauere Setup-Einschätzung', pay: 0.4 },
 };
+// Schlüsselposten im Team (fiktive Personen vom Bewerbermarkt)
+export const POSTS = {
+  td:       { name: 'Technischer Direktor', hint: 'Ertrag aller Entwicklungen, ab 85: Projekte 1 Rennen schneller' },
+  aero:     { name: 'Chefdesigner Chassis', hint: 'Ertrag der Chassis- und Aero-Upgrades' },
+  engine:   { name: 'Motorenchef', hint: 'Ertrag der Motor- und Zuverlässigkeits-Upgrades' },
+  raceEng:  { name: 'Chef-Renningenieur', hint: 'Setup-Einschätzung im Training' },
+  strategy: { name: 'Strategiechef', hint: 'macht die Strategie-Vorschläge vor dem Rennen' },
+  crew:     { name: 'Boxencrew-Chef', hint: 'schnellere Boxenstopps' },
+};
+const FIRST = ['Anna', 'Ben', 'Clara', 'David', 'Elena', 'Finn', 'Greta', 'Hugo', 'Ines', 'Jonas', 'Karla', 'Leon', 'Mara', 'Nico', 'Olga', 'Paul', 'Rosa', 'Sven', 'Tara', 'Viktor', 'Yara', 'Emil'];
+const LAST = ['Achterberg', 'Brenner', 'Castell', 'Dorn', 'Ehrlich', 'Falk', 'Gruber', 'Holm', 'Ivers', 'Janssen', 'Krüger', 'Lindqvist', 'Moretti', 'Nyberg', 'Okafor', 'Petit', 'Quast', 'Rinaldi', 'Sato', 'Tremblay', 'Ueda', 'Varga', 'Weiland', 'Zorn'];
+// Auto-Konzept für den Winter (Vorsaison) – Startwerte der Entwicklung
+export const CONCEPTS = {
+  downforce: { name: 'Abtriebs-Konzept', hint: 'stark auf kurvigen Strecken (Monaco, Ungarn, Singapur)', dev: { aero: 1.8, motor: 0.3, rel: 0.5 } },
+  speed:     { name: 'Topspeed-Konzept', hint: 'stark auf schnellen Strecken (Monza, Baku, Las Vegas)', dev: { aero: 0.3, motor: 1.8, rel: 0.5 } },
+  balanced:  { name: 'Ausgewogen', hint: 'solide auf allen Strecken', dev: { aero: 1.0, motor: 1.0, rel: 0.6 } },
+  reliable:  { name: 'Zuverlässigkeit zuerst', hint: 'kaum Ausfälle, etwas weniger Tempo', dev: { aero: 0.6, motor: 0.6, rel: 3.0 } },
+};
+export const CONCEPT_COST = 16;
+
 export const PARTS = {
   wing:    { name: 'Frontflügel', price: 0.3 },
   chassis: { name: 'Chassis',     price: 2.5 },
@@ -68,21 +88,158 @@ export function initManagement(season, teams, drivers) {
     pu: { used: 1, age: 0 },
     drivers: Object.fromEntries(own.map(d => [d.id, { morale: 70, contractEnd: 2026 + (d.pace >= 90 ? 2 : 1), salary: Math.round(2 + Math.max(0, d.pace - 70) * 0.9) }])),
     sponsors: [],
+    titleSponsor: null,
+    phase: 'preseason', concept: null,
+    posts: {},
     board: { target: clamp(rank, 1, 10), rep: 50, msgs: [] },
     ai: Object.fromEntries(teams.filter(t => t.id !== team.id).map(t => [t.id, { pace: 0, rel: 0 }])),
     report: null,
     talked: {},
   };
-  // Sponsoren mit Rennzielen (passend zur Stärke des Teams)
-  const pool = tier === 'top' ? ['podium', 'top5', 'bothPts', 'both'] : tier === 'mid' ? ['points', 'top5', 'both', 'gain'] : ['points', 'both', 'gain', 'bothPts'];
-  for (let i = 0; i < 3; i++) {
-    const g = pool[i];
-    const reward = { podium: 2.5, top5: 1.8, bothPts: 2.2, both: 0.8, points: 1.5, gain: 0.7 }[g];
-    m.sponsors.push({ name: SPONSORS[Math.floor(hash(season.started + team.id + i) * SPONSORS.length + i * 3) % SPONSORS.length], goal: g, reward, hits: 0 });
-  }
-  m.titleSponsor = { name: SPONSORS[Math.floor(hash(team.id + 'title') * SPONSORS.length)], target: m.board.target, bonus: { top: 20, mid: 14, back: 10 }[tier], perRace: { top: 7.0, mid: 6.2, back: 5.6 }[tier] };
+  // Bestehendes Personal (je nach Team), zwei Posten sind zu Saisonbeginn frei
+  const base = { top: 82, mid: 72, back: 62 }[tier];
+  for (const k of ['td', 'aero', 'engine', 'crew']) m.posts[k] = person(`${season.year}${team.id}${k}`, base - 6 + Math.round(hash(team.id + k) * 12));
+  m.posts.raceEng = null;
+  m.posts.strategy = null;
   season.mgmt = m;
+  refreshMarket(season, teams);
   return m;
+}
+
+// Person für einen Posten: Bewertung 0–100, Gehalt pro Jahr, Ablöse
+function person(seed, rating) {
+  const r = clamp(Math.round(rating), 35, 98);
+  return {
+    name: `${FIRST[Math.floor(hash(seed + 'f') * FIRST.length)]} ${LAST[Math.floor(hash(seed + 'l') * LAST.length)]}`,
+    rating: r,
+    salary: Math.round((0.6 + Math.pow(r / 100, 3) * 6.5) * 10) / 10,
+    fee: Math.round((r >= 80 ? 2 + (r - 80) * 0.25 : 0.5 + r / 100) * 10) / 10,
+  };
+}
+const postRating = (m, k) => (m.posts && m.posts[k] ? m.posts[k].rating : 35);
+
+// Märkte: Bewerber je Posten, Titelsponsor- und Partner-Angebote (neu nach jedem Wochenende)
+export function refreshMarket(season, teams) {
+  const m = season.mgmt;
+  const team = teams ? teams.find(t => t.id === season.teamId) : null;
+  const rep = m.board.rep;
+  const seed = `${season.year}${season.round}${season.teamId}`;
+  m.market = m.market || {};
+  m.market.staff = {};
+  for (const k of Object.keys(POSTS)) {
+    m.market.staff[k] = [0, 1, 2].map(i => person(`${seed}${k}${i}`, 50 + hash(`${seed}${k}${i}r`) * 45 + (i === 2 ? 5 : 0)));
+  }
+  // Sponsoren: je stärker Team und Ruf, desto mehr Geld
+  const tierF = { top: 1.25, mid: 1, back: 0.82 }[m.tier] * (0.85 + rep / 330);
+  const names = SPONSORS.filter(n => n !== (m.titleSponsor && m.titleSponsor.name) && !m.sponsors.some(x => x.name === n));
+  const pickName = i => names[Math.floor(hash(`${seed}n${i}`) * names.length + i * 3) % names.length];
+  if (!m.titleSponsor) {
+    m.market.title = [
+      { name: pickName(0), kind: 'Sicher', perRace: r1(5.8 * tierF), bonus: r1(6 * tierF), target: m.board.target + 1 },
+      { name: pickName(1), kind: 'Leistung', perRace: r1(4.6 * tierF), bonus: r1(24 * tierF), target: Math.max(1, m.board.target - 1) },
+      { name: pickName(2), kind: 'Ausgewogen', perRace: r1(5.2 * tierF), bonus: r1(14 * tierF), target: m.board.target },
+    ];
+  } else m.market.title = [];
+  const pool = ['points', 'top5', 'podium', 'both', 'bothPts', 'gain'];
+  m.market.partners = [3, 4, 5, 6, 7].map(i => {
+    const g = pool[Math.floor(hash(`${seed}g${i}`) * pool.length)];
+    const hard = { podium: 3, top5: 2, bothPts: 2, points: 1.2, both: 0.8, gain: 0.7 }[g];
+    return { name: pickName(i), fee: r1((0.25 + hash(`${seed}fee${i}`) * 0.35) * tierF), goal: g, reward: r1(hard * tierF * (m.tier === 'top' && g === 'points' ? 0.4 : 1)) };
+  }).filter((x, i, a) => a.findIndex(y => y.name === x.name) === i);
+  void team;
+}
+const r1 = x => Math.round(x * 10) / 10;
+
+// Alte Spielstände (vor v10) ergänzen
+export function migrateManagement(season, teams) {
+  const m = season.mgmt;
+  if (!m || m.posts) return;
+  m.posts = {};
+  const base = { top: 82, mid: 72, back: 62 }[m.tier] || 70;
+  for (const k of Object.keys(POSTS)) m.posts[k] = person(`${season.year}${season.teamId}${k}`, base);
+  m.phase = 'season';
+  m.concept = 'balanced';
+  refreshMarket(season, teams);
+}
+
+// ---------- Vorsaison ----------
+export function preseasonTasks(season) {
+  const m = season.mgmt;
+  const vacant = Object.keys(POSTS).filter(k => !m.posts[k]);
+  return [
+    { key: 'sponsors', done: Boolean(m.titleSponsor), text: 'Titelsponsor unter Vertrag nehmen' },
+    { key: 'staff', done: vacant.length === 0, text: vacant.length ? `Freie Posten besetzen: ${vacant.map(k => POSTS[k].name).join(', ')}` : 'Alle Schlüsselposten besetzt' },
+    { key: 'dev', done: Boolean(m.concept), text: 'Auto-Konzept für die Saison festlegen' },
+    { key: 'partners', done: m.sponsors.length > 0, text: 'Mindestens einen Partner-Sponsor gewinnen', optional: true },
+  ];
+}
+export function readyForRace(season) {
+  return preseasonTasks(season).every(t => t.done || t.optional);
+}
+
+export function signTitle(season, idx) {
+  const m = season.mgmt;
+  const o = m.market.title && m.market.title[idx];
+  if (!o) return 'Angebot nicht mehr verfügbar.';
+  if (m.titleSponsor) return 'Es gibt bereits einen Titelsponsor.';
+  m.titleSponsor = { ...o };
+  m.market.title = [];
+  return null;
+}
+export function signPartner(season, idx) {
+  const m = season.mgmt;
+  const o = m.market.partners && m.market.partners[idx];
+  if (!o) return 'Angebot nicht mehr verfügbar.';
+  if (m.sponsors.length >= 3) return 'Höchstens drei Partner – erst einen Vertrag beenden.';
+  m.sponsors.push({ ...o, hits: 0 });
+  m.market.partners.splice(idx, 1);
+  return null;
+}
+export function dropPartner(season, idx) {
+  const m = season.mgmt;
+  if (!m.sponsors[idx]) return 'Unbekannter Partner.';
+  m.sponsors.splice(idx, 1);
+  m.board.rep = clamp(m.board.rep - 2, 0, 100);
+  return null;
+}
+
+export function hire(season, post, idx) {
+  const m = season.mgmt;
+  const c = m.market.staff[post] && m.market.staff[post][idx];
+  if (!c) return 'Bewerber nicht mehr verfügbar.';
+  if (m.money < c.fee) return 'Nicht genug Geld für die Ablöse.';
+  if (capLeft(m) < c.fee) return 'Das würde die Budgetobergrenze überschreiten.';
+  spend(m, c.fee, `${POSTS[post].name}: ${c.name} verpflichtet`);
+  m.posts[post] = { name: c.name, rating: c.rating, salary: c.salary };
+  m.market.staff[post].splice(idx, 1);
+  return null;
+}
+
+export function chooseConcept(season, key) {
+  const m = season.mgmt, c = CONCEPTS[key];
+  if (!c) return 'Unbekanntes Konzept.';
+  if (m.concept) return 'Das Konzept steht bereits fest.';
+  if (m.money < CONCEPT_COST) return 'Nicht genug Geld.';
+  spend(m, CONCEPT_COST, `Winter-Entwicklung: ${c.name}`);
+  const f = devFactor(m, 'aero') * 0.5 + devFactor(m, 'motor') * 0.5;
+  for (const [k, v] of Object.entries(c.dev)) m.dev[k] = Math.round((m.dev[k] + v * f) * 100) / 100;
+  m.concept = key;
+  return null;
+}
+
+export function startSeason(season) {
+  if (!readyForRace(season)) return 'Erst die wichtigsten Aufgaben erledigen.';
+  season.mgmt.phase = 'season';
+  return null;
+}
+
+// Ertragsfaktor der Entwicklung je Bereich aus Technischem Direktor und Fachchef (Bewertung 70 ≈ 1,0)
+export function devFactor(m, type) {
+  const spec = type === 'aero' ? 'aero' : 'engine';
+  return 0.5 + (postRating(m, 'td') + postRating(m, spec)) / 2 / 140;
+}
+export function staffCostPerRace(m) {
+  return Object.values(m.posts || {}).reduce((s, p) => s + (p ? p.salary : 0), 0) / 24;
 }
 
 // ---------- Werte des eigenen Teams und der KI-Teams für ein Wochenende ----------
@@ -95,7 +252,7 @@ export function teamsForWeekend(season, teams, track) {
     if (t.id === season.teamId) {
       const pace = t.pace + m.dev.aero * (0.5 + wn) + m.dev.motor * (1.5 - wn);
       const rel = t.reliability + m.dev.rel * 2 - Math.max(0, m.pu.age - 5) * 3;
-      return { ...t, pace: Math.min(100, pace), reliability: clamp(rel, 40, 99), pitCrew: clamp(t.pitCrew + (m.staff.crew - 3) * 3, 60, 99) };
+      return { ...t, pace: Math.min(100, pace), reliability: clamp(rel, 40, 99), pitCrew: clamp(t.pitCrew + (postRating(m, 'crew') - 70) / 3.5, 60, 99) };
     }
     const a = m.ai[t.id] || { pace: 0, rel: 0 };
     return { ...t, pace: Math.min(100, t.pace + a.pace), reliability: clamp(t.reliability + a.rel, 40, 99) };
@@ -104,9 +261,9 @@ export function teamsForWeekend(season, teams, track) {
 
 // Ingenieure: Einschätzung der Setup-Qualität (genauer mit besseren Ingenieuren)
 export function engineerEstimate(season, score, seed) {
-  const lvl = season.mgmt ? season.mgmt.staff.eng : 3;
-  if (lvl < 3) return null;
-  const err = (5 - lvl) * 7 * (hash(String(seed)) - 0.5) * 2;
+  const m = season.mgmt;
+  if (!m || !m.posts || !m.posts.raceEng) return null;
+  const err = (100 - m.posts.raceEng.rating) * 0.5 * (hash(String(seed)) - 0.5) * 2;
   return clamp(Math.round(score + err), 0, 100);
 }
 
@@ -126,8 +283,8 @@ export function startProject(season, type, size) {
   if (m.money < s.cost) return 'Nicht genug Geld.';
   if (capLeft(m) < s.cost) return 'Das würde die Budgetobergrenze überschreiten.';
   spend(m, s.cost, `${DEV[type].name}: ${s.name}`);
-  const rounds = Math.max(1, s.rounds - (m.staff.eng >= 5 ? 1 : 0));
-  const gain = s.gain * (1 + (m.staff.eng - 3) * 0.12);
+  const rounds = Math.max(1, s.rounds - (postRating(m, 'td') >= 85 ? 1 : 0));
+  const gain = s.gain * devFactor(m, type);
   m.projects.push({ type, size, rounds, total: rounds, gain: Math.round(gain * 100) / 100 });
   return null;
 }
@@ -215,14 +372,15 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
   // Einnahmen: Preisgeld, Titelsponsor, Sponsorenziele
   const prize = 1.2 + pts * 0.12;
   m.money += prize; m.log.push({ what: 'Preisgeld', amount: prize });
-  m.money += m.titleSponsor.perRace; m.log.push({ what: `Titelsponsor ${m.titleSponsor.name}`, amount: m.titleSponsor.perRace });
+  if (m.titleSponsor) { m.money += m.titleSponsor.perRace; m.log.push({ what: `Titelsponsor ${m.titleSponsor.name}`, amount: m.titleSponsor.perRace }); }
   for (const s of m.sponsors) {
+    if (s.fee) { m.money += s.fee; m.log.push({ what: `Partner ${s.name}`, amount: s.fee }); }
     const hit = GOALS[s.goal].ok(r);
     s.last = hit;
     if (hit) { s.hits++; m.money += s.reward; m.log.push({ what: `${s.name}: ${GOALS[s.goal].text}`, amount: s.reward }); }
   }
   // Ausgaben: Personal (Budgetobergrenze), Fahrergehälter (nicht), Reparaturen und Ersatzteile
-  const staff = m.staff.crew * STAFF.crew.pay + m.staff.eng * STAFF.eng.pay + OPS;   // + Grundbetrieb (Fabrik, Reisen, Logistik)
+  const staff = staffCostPerRace(m) + OPS;   // Schlüsselposten + Grundbetrieb (Fabrik, Personal, Reisen, Logistik)
   spend(m, staff, 'Personal und Betrieb');
   const sal = own.reduce((s, id) => s + m.drivers[id].salary, 0) / 24;
   spend(m, sal, 'Fahrergehälter', false);
@@ -277,6 +435,7 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
   if (m.money < 0) { m.board.rep = clamp(m.board.rep - 3, 0, 100); notes.push('Das Konto ist im Minus – der Vorstand ist besorgt.'); }
   if (m.board.rep < 25) notes.push('Der Vorstand ist sehr unzufrieden mit den Ergebnissen.');
   m.report = { round: season.round, notes, log: m.log, r };
+  refreshMarket(season, teams);
   return notes;
 }
 
@@ -289,7 +448,7 @@ export function expectedPoints(target) {
 export function seasonEnd(season, teamPos) {
   const m = season.mgmt;
   const out = [];
-  if (teamPos <= m.titleSponsor.target) { m.money += m.titleSponsor.bonus; out.push(`Saisonziel erreicht: Bonus ${money(m.titleSponsor.bonus)} von ${m.titleSponsor.name}.`); }
+  if (m.titleSponsor && teamPos <= m.titleSponsor.target) { m.money += m.titleSponsor.bonus; out.push(`Saisonziel erreicht: Bonus ${money(m.titleSponsor.bonus)} von ${m.titleSponsor.name}.`); }
   if (m.spent > CAP) {
     const over = (m.spent - CAP) / CAP;
     const ded = Math.ceil(over * 100) * 5;

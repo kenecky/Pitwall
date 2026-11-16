@@ -245,3 +245,25 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Fensterwechsel pausiert nicht mehr (Spiel läuft mit gleichem Tempo weiter, nur Speichern)
 - Startseite: Strecke über der Teamwahl (Intro startet an dieser Stelle; Bild wird vorher in den sichtbaren Bereich
   gerollt), Fahrer je Zeile, Ziehen zum Neuladen im oberen Viertel (auch im Browser)
+
+### v10 – Teamzentrale als Manager-Menü, neuer Look
+- **Saisonstart führt in die Teamzentrale** (Vorsaison), nicht ins erste Rennen. Pflichtaufgaben: Titelsponsor unter Vertrag,
+  alle Schlüsselposten besetzt (Chef-Renningenieur und Strategiechef sind zu Beginn frei), Auto-Konzept festgelegt;
+  optional Partner-Sponsoren. Erst dann „Saison starten“. Auch nach Teamwechsel/neuer Saison wieder Vorsaison.
+- **Teamzentrale als Vollbild-Menü** mit Kacheln und Status: Sponsoren, Personal, Fahrer, Entwicklung, Auto & Teile, Finanzen,
+  Vorstand & Karriere, Wertung; unten „Weiter zum GP …“ bzw. „Wochenende fortsetzen“. Startseite (Saison) öffnet die
+  Teamzentrale; nach jedem Wochenende öffnet sie sich mit Bericht und Buchungen.
+- **Sponsoren** (Markt, erneuert nach jedem Wochenende): Titelsponsor-Angebote (Sicher / Ausgewogen / Leistung: Grundbetrag
+  pro Rennen vs. Saisonbonus mit Platzziel), bis zu 3 Partner mit Grundbetrag pro Rennen + Prämie fürs Rennziel; Vertrag
+  beenden kostet etwas Vertrauen. Höhe nach Teamstärke und Vertrauen des Vorstands. Fiktive Namen.
+- **Personal / Schlüsselposten** (fiktive Bewerber mit Bewertung, Gehalt, Ablöse; 3 je Posten, neu nach jedem Wochenende):
+  Technischer Direktor (Ertrag aller Entwicklungen, ab 85 Projekte schneller), Chefdesigner Chassis (Chassis/Aero),
+  Motorenchef (Motor, Zuverlässigkeit), Chef-Renningenieur (Setup-Einschätzung im Training, genauer mit Bewertung),
+  Strategiechef (macht die Strategie-Vorschläge vor dem Rennen), Boxencrew-Chef (Boxenstopp-Zeiten). Gehälter zählen
+  zur Budgetobergrenze. Ersetzt die bisherigen Stufen für Crew/Ingenieure.
+- **Auto-Konzept** (einmal pro Saison, 16 Mio. $): Abtrieb, Topspeed, Ausgewogen, Zuverlässigkeit – Startwerte der Entwicklung,
+  Ertrag abhängig vom Personal. Upgrades heißen jetzt Chassis & Aero, Motor, Zuverlässigkeit; Ertragsfaktor wird angezeigt.
+- Fahrer-Karten mit Tempo/Konstanz/Regen/Stimmung, Finanzen mit Saldo pro Rennen.
+- Alte Saisonstände werden ergänzt (alle Posten besetzt, Konzept „Ausgewogen“).
+- **Neuer Look** im Stil des Icons: Ladeseite und Startseite dunkel mit rot-orangem Verlauf, runde Karten, Verlaufs-Knöpfe;
+  gelb-schwarze Streifen überall durch eine rot-orange Verlaufslinie ersetzt.

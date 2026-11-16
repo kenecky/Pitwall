@@ -5,7 +5,7 @@
 // den Cache-Speicher mit uns. Deshalb nur eigene Caches (Präfix 'pw-') anlegen und löschen.
 // Streckenumgebungen (js/data/scenery/) werden beim ersten Intro nachgeladen und dann gecacht.
 const PREFIX = 'pw-';
-const CACHE = PREFIX + 'v9';
+const CACHE = PREFIX + 'v10';
 const ASSETS = [
   './',
   'index.html',

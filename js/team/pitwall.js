@@ -314,7 +314,7 @@ export function strategyOptions(race, car, wk = null) {
   const laps = race.laps;
   const w = race.wear || 1;
   const loss = pitLoss(race, car);
-  const who = STRATEGISTS[car.team.id] || 'Strategie';
+  const who = (wk && wk.strategist) || STRATEGISTS[car.team.id] || 'Strategie';   // Saison: eingestellter Strategiechef
   const wx = race.weather;
   if (wx.wetness > 0.2) {
     const wet = wx.wetness > 0.65 ? 'W' : 'I';
