@@ -331,3 +331,22 @@
 .pw-mgr .pw-hint.bad { color: #ff9b8f; }
 .pw-mgr .season-tabs { margin-top: 6px; }
 .pw-mgr .pw-res td { padding: 6px 4px; }
+
+/* v11: Dialog, Verhandlung */
+.pw-dialog { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(6,8,12,.72); backdrop-filter: blur(4px); }
+.pw-dialog.hidden { display: none; }
+.pw-dlg { width: min(420px, 100%); padding: 18px; border-radius: 20px; background: linear-gradient(180deg, #1f2431, #161a24); border: 1px solid rgba(255,106,61,.45); box-shadow: 0 24px 60px -20px rgba(255,72,40,.6); color: #eef0f5; }
+.pw-dlg-title { font: 900 18px system-ui, -apple-system, sans-serif; }
+.pw-dlg-text { margin: 10px 0 18px; font-size: 14px; line-height: 1.5; color: #c9cdd8; }
+.pw-dlg-btns { display: grid; grid-template-columns: 1fr 1.3fr; gap: 10px; }
+.pw-dlg-btns button { height: 48px; }
+.pw-mgr-foot.hidden { display: none; }
+.pw-terms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 4px; }
+.pw-terms > div { padding: 8px; border-radius: 12px; background: rgba(0,0,0,.25); }
+.pw-terms small { display: block; font-size: 10.5px; color: #aab0bf; }
+.pw-terms b { font-size: 14px; }
+.pw-nlog { margin-top: 10px; display: grid; gap: 6px; font-size: 13px; color: #dfe3ea; }
+.pw-nlog > div { padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,.05); }
+.pw-nlog > div:first-child { border: 1px solid rgba(255,106,61,.45); }
+.pw-mgr .pw-hqbtns button:disabled { opacity: .4; }
+.pw-mgr .pw-hqbtns button small { display: block; margin-top: 2px; }

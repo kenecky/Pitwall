@@ -267,3 +267,21 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Alte Saisonstände werden ergänzt (alle Posten besetzt, Konzept „Ausgewogen“).
 - **Neuer Look** im Stil des Icons: Ladeseite und Startseite dunkel mit rot-orangem Verlauf, runde Karten, Verlaufs-Knöpfe;
   gelb-schwarze Streifen überall durch eine rot-orange Verlaufslinie ersetzt.
+
+### v11 – Verhandlung, Gebäude, Navigation
+- Startseite (Saison): „Saison starten“ bzw. „Saison fortsetzen“; die Saison wird laufend gespeichert.
+- Teamzentrale: ✕ in einem Bereich führt zurück zur Teamzentrale (erst auf der Hauptseite zur Startseite); der große
+  Weiter-Knopf erscheint nur auf der Hauptseite.
+- **Eigenes Bestätigungsfenster** (statt Browser-Dialog) für Upgrades, Bau, Teile, Personal, Konzept, Verträge, Antriebseinheit,
+  Teamwechsel, Spielstand verwerfen/überschreiben, Saison neu starten.
+- **Sponsoren-Verhandlung**: „Verhandeln“ statt Annehmen. Versteckte Schmerzgrenze je Sponsor (+5 … +27 % über dem Angebot,
+  mehr mit Vertrauen und Marketing-Gebäude), sichtbares Interesse (70–95 zu Beginn). Forderung +5/+10/+20 %: unter
+  der Grenze → Zusage (Interesse −4), knapp an der Grenze → Gegenangebot in der Mitte (−10), darüber → Absage (−18);
+  jede Runde kostet zusätzlich Geduld. Interesse 0 → Angebot zurückgezogen. „Mehr Erfolgsprämie“: 20 % Fixum gegen +60 %
+  Bonus/Prämie (einmal). Anzeige: aktuelle Bedingungen, geschätzter Saisonwert, Verlauf der Gespräche.
+- **Gebäude** (Stufe 1–5, Start nach Teamstärke 1/2/3; Bau 8/14/22/32 Mio. $, 2–5 Rennen, immer nur eine Baustelle;
+  Investitionen nicht in der Budgetobergrenze, Unterhalt 0,08 Mio. $ je Stufe und Rennen schon):
+  Entwicklungszentrum (1/2/2/3/3 Projekte gleichzeitig, ab Stufe 3 Projekte 1 Rennen schneller), Windkanal (Chassis & Aero
+  +6 % Ertrag je Stufe), Motorenprüfstand (Motor & Zuverlässigkeit +6 %), Simulator (Setup-Einschätzung 15 % genauer je
+  Stufe), Boxencrew-Trainingszentrum (Boxencrew +1,5), Marketing & Hospitality (Sponsorangebote +7 %, mehr
+  Verhandlungsspielraum), Fahrerzentrum (Fahrerstimmung +1 je Stufe und Wochenende).

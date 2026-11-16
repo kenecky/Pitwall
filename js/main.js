@@ -28,6 +28,7 @@ import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
   extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
   migrateManagement, preseasonTasks, readyForRace, signTitle, signPartner, dropPartner, hire, chooseConcept, startSeason, devFactor, staffCostPerRace,
+  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildRounds, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
 } from './team/management.js';
 import {
   PACE, PACE_ORDER, ERS, ERS_ORDER, STRATEGISTS, playerCars, setPace, setErs, callBox, cancelBox, tooLateForBox, tyreLife, adviceFor,
@@ -40,7 +41,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 10;
+export const VERSION = 11;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -347,8 +348,8 @@ function renderResume() {
     <div><b>${d.mode === 'season' ? 'Saison · ' : ''}${esc(t ? t.grandPrix.replace('Großer Preis ', 'GP ') : d.trackId)}</b> · ${esc(SESSION_NAME[d.kind] || '')} · ${esc(TEAM_BY_ID[d.teamId] ? TEAM_BY_ID[d.teamId].name : '')}</div>
     <div class="pw-rbtns"><button id="resumeBtn" class="primary-btn">Fortsetzen</button><button id="dropSaveBtn" class="secondary-btn">Verwerfen</button></div></div>`;
   $('resumeBtn').onclick = () => { sound.unlock(); resumeGame(); };
-  $('dropSaveBtn').onclick = () => {
-    if (!confirm('Gespeichertes Wochenende verwerfen?')) return;
+  $('dropSaveBtn').onclick = async () => {
+    if (!(await pwConfirm('Spielstand verwerfen?', 'Das gespeicherte Wochenende wird gelöscht.', 'Verwerfen'))) return;
     savedGame = null; clearGame(); renderResume();
   };
 }
@@ -386,8 +387,8 @@ function seasonTabHtml(seasonTab) {
 for (const b of document.querySelectorAll('#seasonScreen .stab')) b.addEventListener('click', () => { seasonTab = b.dataset.stab; renderSeasonTab(); });
 $('seasonCloseBtn').addEventListener('click', () => $('seasonScreen').classList.add('hidden'));
 $('seasonBtn').addEventListener('click', () => showSeason());
-$('seasonResetBtn').addEventListener('click', () => {
-  if (!confirm('Saison wirklich neu starten? Der bisherige Saisonstand geht verloren.')) return;
+$('seasonResetBtn').addEventListener('click', async () => {
+  if (!(await pwConfirm('Saison neu starten?', 'Der bisherige Saisonstand geht verloren.', 'Neu starten'))) return;
   season = null;
   clearSeason();
   if (savedGame && savedGame.mode === 'season') { savedGame = null; clearGame(); }
@@ -407,11 +408,12 @@ let hqNotes = [];
 let hqHire = null;           // Posten, für den gerade Bewerber angezeigt werden
 const HQ_SECTIONS = [
   ['sponsors', '🤝', 'Sponsoren'], ['staff', '👥', 'Personal'], ['drivers', '🏎', 'Fahrer'], ['dev', '🔧', 'Entwicklung'],
-  ['car', '⚙️', 'Auto & Teile'], ['money', '💶', 'Finanzen'], ['board', '🏛', 'Vorstand & Karriere'], ['standings', '🏆', 'Wertung'],
+  ['buildings', '🏗', 'Gebäude'], ['car', '⚙️', 'Auto & Teile'], ['money', '💶', 'Finanzen'], ['board', '🏛', 'Vorstand & Karriere'], ['standings', '🏆', 'Wertung'],
 ];
 function showHQ(notes = null) {
   if (!season || !season.mgmt) return;
   migrateManagement(season, TEAMS);
+  migrateBuildings(season);
   if (notes) hqNotes = notes;
   if (hqTab === 'report') hqTab = 'home';
   if (hqTab === 'career') hqTab = 'board';
@@ -431,6 +433,7 @@ function tileStatus(k) {
     case 'staff': { const v = Object.keys(POSTS).filter(p => !m.posts[p]).length; return v ? [`${v} Posten frei`, 'bad'] : ['Alle Posten besetzt', '']; }
     case 'drivers': { const low = Object.values(m.drivers).filter(d => d.morale < 40).length; return low ? [`${low} Fahrer unzufrieden`, 'warn'] : ['Stimmung ok', '']; }
     case 'dev': return !m.concept ? ['Auto-Konzept fehlt!', 'bad'] : m.projects.length ? [`${m.projects.length} Projekt${m.projects.length > 1 ? 'e' : ''} läuft`, ''] : ['Keine Projekte', 'warn'];
+    case 'buildings': return m.construction ? [`Baustelle: ${BUILDINGS[m.construction.key].name} (${m.construction.rounds} Rennen)`, ''] : ['Keine Baustelle', 'warn'];
     case 'car': return m.pu.age >= 6 ? [`Antrieb ${m.pu.age} Wochenenden alt`, 'warn'] : [`Flügel ${m.parts.wing} · Chassis ${m.parts.chassis}`, ''];
     case 'money': return [`${money(m.money)}`, m.money < 0 ? 'bad' : ''];
     case 'board': return [`Ruf ${m.board.rep} · Ziel P${m.board.target}`, m.board.rep < 25 ? 'bad' : ''];
@@ -455,6 +458,8 @@ function renderHQ() {
     }
     h += `<div class="pw-tiles">${HQ_SECTIONS.map(([k, ic, n]) => { const [st, cls] = tileStatus(k); return `<button class="pw-tile" data-go="${k}"><span class="ic">${ic}</span><b>${n}</b><small class="${cls}">${st}</small></button>`; }).join('')}</div>`;
     if (m.report && m.report.log && m.phase !== 'preseason') h += `<div class="pw-label">BUCHUNGEN NACH RENNEN ${m.report.round}</div><table class="pw-res"><tbody>${m.report.log.map(l => `<tr><td>${esc(l.what)}</td><td style="text-align:right" class="${l.amount < 0 ? 'neg' : 'pos'}">${l.amount > 0 ? '+' : ''}${money(l.amount)}</td></tr>`).join('')}</tbody></table>`;
+  } else if (hqTab === 'sponsors' && m.nego) {
+    h = negoHtml(m.nego);
   } else if (hqTab === 'sponsors') {
     h += '<div class="pw-label">TITELSPONSOR</div>';
     if (m.titleSponsor) {
@@ -463,14 +468,14 @@ function renderHQ() {
     } else {
       h += '<div class="pw-hint bad">Ohne Titelsponsor fehlt die wichtigste Einnahme. Wähle ein Angebot:</div>';
       h += (m.market.title || []).map((o, i) => `<div class="pw-mcard"><b>${esc(o.name)}</b> <span class="pw-chip">${o.kind}</span><small>${money(o.perRace)} pro Rennen · Bonus ${money(o.bonus)} bei Platz ${o.target} oder besser</small>
-        <div class="pw-hqbtns"><button class="go" data-title="${i}">Vertrag unterschreiben</button></div></div>`).join('');
+        <div class="pw-hqbtns"><button class="go" data-nego="title" data-idx="${i}">Verhandeln</button></div></div>`).join('');
     }
     h += `<div class="pw-label">PARTNER (${m.sponsors.length}/3) – Grundbetrag pro Rennen + Prämie fürs Ziel</div>`;
     h += m.sponsors.length ? m.sponsors.map((s, i) => `<div class="pw-mcard"><b>${esc(s.name)}</b><small>${s.fee ? `${money(s.fee)} pro Rennen · ` : ''}Prämie ${money(s.reward)}: ${goalText(s.goal)} · erreicht ${s.hits}×${s.last === undefined ? '' : s.last ? ' · zuletzt ✓' : ' · zuletzt ✗'}</small>
       <div class="pw-hqbtns"><button data-drop="${i}">Vertrag beenden</button></div></div>`).join('') : '<div class="pw-hint">Noch keine Partner.</div>';
     if (m.sponsors.length < 3) {
       h += '<div class="pw-label">ANGEBOTE</div>' + (m.market.partners || []).map((o, i) => `<div class="pw-mcard"><b>${esc(o.name)}</b><small>${money(o.fee)} pro Rennen · Prämie ${money(o.reward)}: ${goalText(o.goal)}</small>
-        <div class="pw-hqbtns"><button class="go" data-partner="${i}">Unterschreiben</button></div></div>`).join('');
+        <div class="pw-hqbtns"><button class="go" data-nego="partner" data-idx="${i}">Verhandeln</button></div></div>`).join('');
     }
     h += '<div class="pw-hint">Angebote ändern sich nach jedem Rennwochenende. Ein besserer Ruf bringt bessere Angebote.</div>';
   } else if (hqTab === 'staff') {
@@ -502,8 +507,17 @@ function renderHQ() {
     }
     h += '<div class="pw-label">UPGRADES</div>' + Object.entries(DEV).map(([k, d]) => `<div class="pw-mcard"><b>${d.name}</b><small>${d.hint} · Ertrag ×${devFactor(m, k).toFixed(2).replace('.', ',')} durch dein Personal</small>
       <div class="pw-hqbtns">${Object.entries(DEV_SIZE).map(([s, z]) => `<button data-dev="${k}" data-size="${s}">${z.name}<small>${money(z.cost)} · ${z.rounds} Rennen · +${(z.gain * devFactor(m, k)).toFixed(1).replace('.', ',')}</small></button>`).join('')}</div></div>`).join('')
-      + `<div class="pw-label">LAUFENDE PROJEKTE (max. 2)</div>${m.projects.length ? m.projects.map(p => `<div class="pw-mcard"><b>${DEV[p.type].name}</b><small>${DEV_SIZE[p.size].name} · fertig in ${p.rounds} Rennen · +${p.gain.toFixed(2).replace('.', ',')}</small></div>`).join('') : '<div class="pw-hint">Keine.</div>'}
+      + `<div class="pw-label">LAUFENDE PROJEKTE (max. ${maxProjects(bLvl(m, 'factory'))} – Entwicklungszentrum)</div>${m.projects.length ? m.projects.map(p => `<div class="pw-mcard"><b>${DEV[p.type].name}</b><small>${DEV_SIZE[p.size].name} · fertig in ${p.rounds} Rennen · +${p.gain.toFixed(2).replace('.', ',')}</small></div>`).join('') : '<div class="pw-hint">Keine.</div>'}
       <div class="pw-hint">Die anderen Teams entwickeln auch – wer stehen bleibt, fällt zurück.</div>`;
+  } else if (hqTab === 'buildings') {
+    const c = m.construction;
+    h = (c ? `<div class="pw-mcard pw-hero"><b>🏗 Baustelle: ${BUILDINGS[c.key].name} → Stufe ${c.lvl}</b>${hqBar('FORTSCHRITT', c.total - c.rounds, c.total, '#ff6a3d', `noch ${c.rounds} Rennen`)}</div>` : '<div class="pw-hint">Es kann immer nur ein Gebäude gleichzeitig gebaut werden. Investitionen zählen nicht zur Budgetobergrenze, der Unterhalt schon.</div>')
+      + Object.entries(BUILDINGS).map(([k, b]) => {
+        const l = bLvl(m, k);
+        const next = l + 1;
+        return `<div class="pw-mcard"><b>${b.icon} ${b.name}</b> <span class="st">${'★'.repeat(l)}${'☆'.repeat(BUILD_MAX - l)}</span><small>Jetzt: ${b.eff(l)}${next <= BUILD_MAX ? `<br>Stufe ${next}: ${b.eff(next)}` : '<br>Höchste Stufe erreicht.'}</small>
+          ${next <= BUILD_MAX ? `<div class="pw-hqbtns"><button class="go" data-build="${k}" ${c ? 'disabled' : ''}>Ausbauen<small>${money(buildCost(next))} · ${buildRounds(next)} Rennen</small></button></div>` : ''}</div>`;
+      }).join('');
   } else if (hqTab === 'car') {
     h = '<div class="pw-label">ERSATZTEILE</div>' + Object.entries(PARTS).map(([k, p]) => `<div class="pw-mcard"><b>${p.name}</b> · ${m.parts[k]} auf Lager<small>${money(p.price)} pro Stück · ohne Lager Eilfertigung zum doppelten Preis</small>
       <div class="pw-hqbtns"><button data-part="${k}" data-n="1">+1 kaufen</button><button data-part="${k}" data-n="3">+3 kaufen</button></div></div>`).join('')
@@ -523,6 +537,7 @@ function renderHQ() {
     h = `<div class="season-tabs">${[['drivers', 'Fahrer'], ['teams', 'Teams'], ['calendar', 'Kalender']].map(([k, n]) => `<button class="stab${seasonTab === k ? ' active' : ''}" data-stab2="${k}">${n}</button>`).join('')}</div>${seasonTabHtml(seasonTab)}`;
   }
   $('hqBody').innerHTML = h;
+  $('hqScreen').querySelector('.pw-mgr-foot').classList.toggle('hidden', hqTab !== 'home');
   // Weiter-Knopf unten
   const go = $('hqGo');
   const c = initCareer(season);
@@ -531,6 +546,40 @@ function renderHQ() {
   else if (savedGame && savedGame.mode === 'season') { go.textContent = 'Wochenende fortsetzen'; go.disabled = false; }
   else { go.textContent = `Weiter zum ${TRACKS[entry.track].grandPrix.replace('Großer Preis ', 'GP ')}`; go.disabled = false; }
 }
+// Sponsoren-Verhandlung
+function negoHtml(n) {
+  const k = n.kind === 'title' ? 'perRace' : 'fee';
+  const terms = n.kind === 'title'
+    ? `<div class="pw-terms"><div><small>pro Rennen</small><b>${money(n.cur.perRace)}</b></div><div><small>Saisonbonus</small><b>${money(n.cur.bonus)}</b></div><div><small>Ziel</small><b>Platz ${n.cur.target}</b></div></div>`
+    : `<div class="pw-terms"><div><small>pro Rennen</small><b>${money(n.cur.fee)}</b></div><div><small>Prämie</small><b>${money(n.cur.reward)}</b></div><div><small>Ziel</small><b>${goalText(n.cur.goal)}</b></div></div>`;
+  // Geschätzter Saisonwert: Fixum × 24 Rennen + erwartete Prämien (Bonus/Prämie zu ~40 % erreicht)
+  const val = o => (n.kind === 'title' ? o.perRace * 24 + o.bonus * 0.5 : o.fee * 24 + o.reward * 24 * 0.4);
+  const diff = Math.round((val(n.cur) / val(n.base) - 1) * 100);
+  return `<div class="pw-mcard pw-hero"><b>🤝 ${esc(n.name)}</b> <span class="pw-chip">${n.kind === 'title' ? 'Titelsponsor' : 'Partner'}</span>${terms}
+    ${hqBar('INTERESSE', n.interest, 100, n.interest >= 50 ? '#4ade80' : n.interest >= 25 ? '#facc15' : '#f87171')}
+    <small>Runde ${n.round} · geschätzter Wert ~${money(val(n.cur))} pro Saison (${diff >= 0 ? '+' : ''}${diff} % zum ersten Angebot)</small></div>
+    <div class="pw-nlog">${n.log.slice(-5).reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div>
+    ${n.gone ? '<div class="pw-hqbtns"><button data-na="cancel">Zurück zu den Sponsoren</button></div>' : `
+    <div class="pw-label">DEINE FORDERUNG</div>
+    <div class="pw-hqbtns"><button data-na="up5">+5 %<small>vorsichtig</small></button><button data-na="up10">+10 %<small>normal</small></button><button data-na="up20">+20 %<small>riskant</small></button></div>
+    <div class="pw-hqbtns"><button data-na="swap" ${n.swapped ? 'disabled' : ''}>Mehr Erfolgsprämie<small>20 % Fixum gegen +60 % ${n.kind === 'title' ? 'Bonus' : 'Prämie'}</small></button></div>
+    <div class="pw-hqbtns"><button class="go" data-na="sign">Unterschreiben</button><button data-na="cancel">Abbrechen</button></div>
+    <div class="pw-hint">Jeder Sponsor hat eine Grenze, die du nicht siehst. Zu hohe Forderungen und viele Runden kosten Interesse – bei 0 zieht er sein Angebot zurück. Besserer Ruf und das Marketing-Gebäude geben mehr Spielraum.</div>`}`;
+}
+
+// Eigenes Bestätigungsfenster (statt Browser-Dialog)
+function pwConfirm(title, text, okLabel = 'OK') {
+  return new Promise(resolve => {
+    $('pwDlgTitle').textContent = title;
+    $('pwDlgText').innerHTML = text;
+    $('pwDlgOk').textContent = okLabel;
+    $('pwDialog').classList.remove('hidden');
+    const done = v => { $('pwDialog').classList.add('hidden'); $('pwDlgOk').onclick = null; $('pwDlgCancel').onclick = null; resolve(v); };
+    $('pwDlgOk').onclick = () => done(true);
+    $('pwDlgCancel').onclick = () => done(false);
+  });
+}
+
 // Karriere: Ruf als Teamchef, Angebote, Verlauf, neue Saison
 function careerHtml() {
   const c = initCareer(season);
@@ -545,8 +594,15 @@ function careerHtml() {
   h += `<div class="pw-label">VERLAUF</div>${c.history.length ? `<table class="pw-res"><tbody>${c.history.map(x => `<tr><td>${x.year}</td><td>${tn(x.team)}</td><td>${x.end ? `${x.end} nach Rennen ${x.round}` : `Teamwertung P${x.pos} (Ziel P${x.target}) · ${x.pts} Pkt.`}</td></tr>`).join('')}</tbody></table>` : '<div class="pw-hint">Erste Saison.</div>'}`;
   return h;
 }
-$('hqBack').addEventListener('click', () => { hqTab = 'home'; hqHire = null; renderHQ(); $('hqBody').scrollTop = 0; });
-$('hqClose').addEventListener('click', () => { $('hqScreen').classList.add('hidden'); renderStart(); });
+$('hqBack').addEventListener('click', () => {
+  if (season.mgmt.nego) { negoCancel(season); renderHQ(); return; }
+  hqTab = 'home'; hqHire = null; renderHQ(); $('hqBody').scrollTop = 0;
+});
+$('hqClose').addEventListener('click', () => {
+  if (hqTab !== 'home') { if (season.mgmt.nego) negoCancel(season); hqTab = 'home'; hqHire = null; renderHQ(); $('hqBody').scrollTop = 0; return; }
+  $('hqScreen').classList.add('hidden');
+  renderStart();
+});
 $('hqGo').addEventListener('click', () => {
   const m = season.mgmt;
   if (m.phase === 'preseason') { const err = startSeason(season); if (err) { toast(err); return; } saveSeason(season); }
@@ -555,28 +611,54 @@ $('hqGo').addEventListener('click', () => {
   newRace();
   startRace();
 });
-$('hqBody').addEventListener('click', e => {
+$('hqBody').addEventListener('click', async e => {
   const b = e.target.closest('button');
-  if (!b || !season) return;
+  if (!b || !season || b.disabled) return;
   let err = null;
+  const m = season.mgmt;
   if (b.dataset.go) { hqTab = b.dataset.go; hqHire = null; renderHQ(); $('hqBody').scrollTop = 0; return; }
   if (b.dataset.stab2) { seasonTab = b.dataset.stab2; renderHQ(); return; }
   if (b.dataset.hire) { hqHire = hqHire === b.dataset.hire ? null : b.dataset.hire; renderHQ(); return; }
-  if (b.dataset.hirepost) { err = hire(season, b.dataset.hirepost, Number(b.dataset.hireidx)); if (!err) hqHire = null; }
-  else if (b.dataset.title) err = signTitle(season, Number(b.dataset.title));
-  else if (b.dataset.partner) err = signPartner(season, Number(b.dataset.partner));
-  else if (b.dataset.drop) { if (!confirm('Partnervertrag beenden?')) return; err = dropPartner(season, Number(b.dataset.drop)); }
-  else if (b.dataset.concept) { if (!confirm(`${CONCEPTS[b.dataset.concept].name} wählen? Das gilt für die ganze Saison.`)) return; err = chooseConcept(season, b.dataset.concept); }
-  else if (b.dataset.dev) err = startProject(season, b.dataset.dev, b.dataset.size);
-  else if (b.dataset.part) err = buyPart(season, b.dataset.part, Number(b.dataset.n));
-  else if (b.dataset.pu) { if (!confirm('Neue Antriebseinheit einbauen?')) return; err = newPowerUnit(season); }
+  if (b.dataset.hirepost) {
+    const c = m.market.staff[b.dataset.hirepost][Number(b.dataset.hireidx)];
+    if (!(await pwConfirm(`${POSTS[b.dataset.hirepost].name}: ${esc(c.name)}`, `Bewertung ${c.rating} · Gehalt ${money(c.salary)}/Jahr · Ablöse ${money(c.fee)}. Einstellen?`, 'Einstellen'))) return;
+    err = hire(season, b.dataset.hirepost, Number(b.dataset.hireidx)); if (!err) hqHire = null;
+  }
+  else if (b.dataset.nego) err = startNego(season, b.dataset.nego, Number(b.dataset.idx));
+  else if (b.dataset.na) {
+    if (b.dataset.na === 'sign') {
+      const n = m.nego;
+      if (!(await pwConfirm('Vertrag unterschreiben?', `${esc(n.name)}: ${n.kind === 'title' ? `${money(n.cur.perRace)} pro Rennen, Bonus ${money(n.cur.bonus)} bei Platz ${n.cur.target} oder besser` : `${money(n.cur.fee)} pro Rennen, Prämie ${money(n.cur.reward)} (${goalText(n.cur.goal)})`}.`, 'Unterschreiben'))) return;
+      err = negoSign(season);
+      if (!err) toast('Vertrag unterschrieben!');
+    } else if (b.dataset.na === 'cancel') negoCancel(season);
+    else err = negoAction(season, b.dataset.na);
+  }
+  else if (b.dataset.drop) { if (!(await pwConfirm('Partnervertrag beenden?', 'Der Partner zahlt dann nichts mehr. Das Vertrauen des Vorstands sinkt etwas.', 'Beenden'))) return; err = dropPartner(season, Number(b.dataset.drop)); }
+  else if (b.dataset.concept) { const c = CONCEPTS[b.dataset.concept]; if (!(await pwConfirm(c.name, `${c.hint}. Das Konzept gilt für die ganze Saison und kostet ${money(CONCEPT_COST)}.`, 'Festlegen'))) return; err = chooseConcept(season, b.dataset.concept); }
+  else if (b.dataset.dev) {
+    const z = DEV_SIZE[b.dataset.size], d = DEV[b.dataset.dev];
+    if (!(await pwConfirm(`${d.name}: ${z.name}`, `Kosten ${money(z.cost)} (Budgetobergrenze) · Dauer ${z.rounds} Rennen · Ertrag ca. +${(z.gain * devFactor(m, b.dataset.dev)).toFixed(1).replace('.', ',')}. Jetzt starten?`, 'Starten'))) return;
+    err = startProject(season, b.dataset.dev, b.dataset.size);
+  }
+  else if (b.dataset.build) {
+    const k = b.dataset.build, l = bLvl(m, k) + 1;
+    if (!(await pwConfirm(`${BUILDINGS[k].name} auf Stufe ${l}`, `${BUILDINGS[k].eff(l)}. Kosten ${money(buildCost(l))}, Bauzeit ${buildRounds(l)} Rennen. Bauen?`, 'Bauen'))) return;
+    err = startBuilding(season, k);
+  }
+  else if (b.dataset.part) {
+    const p = PARTS[b.dataset.part], n = Number(b.dataset.n);
+    if (!(await pwConfirm(`${n}× ${p.name} kaufen?`, `Kosten ${money(p.price * n)} (Budgetobergrenze).`, 'Kaufen'))) return;
+    err = buyPart(season, b.dataset.part, n);
+  }
+  else if (b.dataset.pu) { if (!(await pwConfirm('Neue Antriebseinheit einbauen?', `Erlaubt sind ${PU_ALLOWANCE} pro Saison. Ab der ${PU_ALLOWANCE + 1}. gibt es 10 Startplätze Strafe.`, 'Einbauen'))) return; err = newPowerUnit(season); }
   else if (b.dataset.talk) err = talkTo(season, b.dataset.talk, b.dataset.k);
-  else if (b.dataset.extend) err = extendContract(season, b.dataset.extend);
+  else if (b.dataset.extend) { if (!(await pwConfirm('Vertrag verlängern?', 'Ein Jahr länger, Gehalt +8 % und eine Unterschriftsprämie.', 'Verlängern'))) return; err = extendContract(season, b.dataset.extend); }
   else if (b.dataset.offer || b.dataset.newseason) {
     if (savedGame && savedGame.mode === 'season') { toast('Erst das laufende Wochenende zu Ende fahren (oder verwerfen).', 3500); return; }
     const id = b.dataset.offer || season.teamId;
     const name = TEAM_BY_ID[id].name;
-    if (!confirm(b.dataset.offer ? `Angebot von ${name} annehmen?` : `Neue Saison ${season.year + 1} mit ${name} starten?`)) return;
+    if (!(await pwConfirm(b.dataset.offer ? `Angebot von ${esc(name)} annehmen?` : `Neue Saison ${season.year + 1}`, b.dataset.offer ? 'Du wechselst das Team. Die Teamzentrale startet mit Budget, Personal und Zielen des neuen Teams.' : `Weiter mit ${esc(name)}.`, b.dataset.offer ? 'Annehmen' : 'Starten'))) return;
     season = b.dataset.offer ? acceptOffer(season, TEAMS, DRIVERS, id) : startNewSeason(season, TEAMS, DRIVERS);
     if (b.dataset.newseason || season.round === 0) season.mgmt.phase = 'preseason';
     saveSeason(season);
@@ -654,7 +736,7 @@ function renderStart() {
   for (const cb of $('sessionChecks').querySelectorAll('input')) cb.checked = cb.value === 'race' || parts.includes(cb.value);
   $('weekendSteps').innerHTML = wk.seq.map((k, i) => `<span class="wstep${i < wk.idx ? ' done' : i === wk.idx ? ' now' : ''}">${SESSION_SHORT[k]}</span>`).join('<span class="wsep">›</span>');
   const fired = Boolean(running && season.career && season.career.fired);
-  $('startBtn').textContent = sea && !season ? 'Saison starten · Teamzentrale' : running ? (fired ? 'Teamzentrale · ohne Team' : '🏢 Teamzentrale') : wk.seq.length > 1 ? `Start: ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
+  $('startBtn').textContent = sea && !season ? 'Saison starten' : running ? 'Saison fortsetzen' : wk.seq.length > 1 ? `Start: ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
   $('startBtn').disabled = false;
   if (running) $('teamInfo').insertAdjacentHTML('afterbegin', `<div class="pw-sum">Saison mit <b>${esc(t.name)}</b>${season.results.length ? ` · Teamwertung P${teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1} · ${season.teamPts[season.teamId] || 0} Punkte` : ' · noch kein Rennen gefahren'}</div>`);
   const wx = race.weather;
@@ -1761,11 +1843,11 @@ $('pauseBtn').addEventListener('click', () => {
   renderSpeedBtns();
   if (paused) autosave();
 });
-$('startBtn').addEventListener('click', () => {
+$('startBtn').addEventListener('click', async () => {
   sound.unlock();
   // Saison: alles läuft über die Teamzentrale (Vorsaison, Rennen, Karriere)
   if (isSeason() && season) { showHQ(); return; }
-  if (savedGame && savedGame.mode === 'season' && isSeason()) { /* Saison-Spielstand bleibt */ } else if (savedGame && !confirm('Es gibt ein gespeichertes Wochenende. Neu beginnen und den Spielstand überschreiben?')) return;
+  if (savedGame && savedGame.mode === 'season' && isSeason()) { /* Saison-Spielstand bleibt */ } else if (savedGame && !(await pwConfirm('Spielstand überschreiben?', 'Es gibt ein gespeichertes Wochenende. Neu beginnen?', 'Neu beginnen'))) return;
   if (isSeason() && !season) {
     season = newSeason(settings.teamId);
     initManagement(season, TEAMS, DRIVERS);
