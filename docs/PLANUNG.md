@@ -44,7 +44,7 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - [x] **M4 – Rennwochenende** (v5): Setup im Training (Flügel, Balance, Federung, Rückmeldung), Quali-Runs timen (Verkehr),
       Reifen-Kontingent, Sprint
 - [x] **M5 – Saison** (v6): Kalender, Speichern/Fortsetzen, Team- und Fahrerwertung
-- [ ] **M6 – Management**: Budget mit Obergrenze, Entwicklung Aero/Motor/Zuverlässigkeit, Ersatzteile und Schäden,
+- [x] **M6 – Management** (v7): Budget mit Obergrenze, Entwicklung Aero/Motor/Zuverlässigkeit, Ersatzteile und Schäden,
       Personal (Boxencrew, Ingenieure), Fahrerverträge und Stimmung, Sponsorenziele, Vorstandsziele, Ruf
 - [ ] **M7 – Karriere**: Teamwechsel, Angebote anderer Teams (wie im Fußballmanager)
 
@@ -178,3 +178,32 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - **Fortsetzen** auf der Startseite (Strecke, Session, Team, wann gespeichert) oder Verwerfen (mit Rückfrage). Ein neues
   Wochenende fragt vor dem Überschreiben. Beim Laden werden Reifensätze wieder verknüpft; offene Funkmeldungen verfallen.
 - Test: `node tests/season.mjs` (zwei Wochenenden inkl. Sprint, Speichern/Laden mitten im Rennen, Wertung)
+
+### v7 – M6 Management (Saison)
+- **Teamzentrale** 🏢 (Startseite in der Saison, automatisch nach jedem Wochenende mit Bericht). Reiter: Bericht, Finanzen,
+  Entwicklung, Team, Fahrer, Partner. Logik in `js/team/management.js`, Zustand in `season.mgmt` (gespeichert mit der Saison).
+- **Finanzen** (Mio. $): Startkapital nach Teamstärke (Top 70 / Mitte 55 / hinten 45). Einnahmen pro Rennen: Preisgeld
+  1,2 + 0,12 je WM-Punkt, Titelsponsor (7,0 / 6,2 / 5,6), Sponsorenziele. Ausgaben: Grundbetrieb 5,6 + Personal, Fahrergehälter
+  (Jahresgehalt / 24), Reparaturen und Teile, Entwicklung.
+- **Budgetobergrenze** 215 Mio. $/Saison: zählt Betrieb, Personal, Entwicklung, Teile, Reparaturen (nicht Fahrergehälter).
+  Ausgaben in der Teamzentrale werden über der Grenze verweigert; Reparaturen können sie überschreiten → am Saisonende
+  5 Teampunkte Abzug je angefangenem Prozent.
+- **Entwicklung**: Aerodynamik (wirkt stärker auf kurvigen Strecken), Motor (stärker auf schnellen Strecken), Zuverlässigkeit
+  (weniger Defekte). Kleines Update 4 Mio./2 Rennen/+0,6, großes Paket 11 Mio./4 Rennen/+1,7 (Teamtempo-Punkte, 1 Punkt
+  ≈ 0,08 s/Runde); max. 2 Projekte; Ingenieure ändern Ertrag (±12 % je Stufe) und Dauer (Stufe 5: −1 Rennen).
+  KI-Teams entwickeln jedes Rennen zufällig mit (Top-Teams etwas schneller).
+- **Team**: Boxencrew und Ingenieure Stufe 1–5 (Verstärken kostet einmalig, laufende Kosten je Stufe). Crew ±3 Boxencrew-Wert
+  je Stufe. Ingenieure ab Stufe 3: Setup-Einschätzung im Training („Ingenieure: Setup ~xx %“, genauer mit höherer Stufe).
+- **Ersatzteile**: Frontflügel und Chassis auf Lager; Reparaturstopp mit neuer Nase verbraucht einen Flügel, Unfall-Ausfall
+  ein Chassis (alle Sessions). Ohne Lager: Eilfertigung zum doppelten Preis.
+- **Antriebseinheit**: 4 pro Saison; Alter in Wochenenden, ab 6 sinkt die Zuverlässigkeit (−3 je Wochenende). Neue Einheit
+  jederzeit, ab der 5. gibt es 10 Startplätze Strafe für beide Fahrer.
+- **Fahrer**: Stimmung (Start der Funk-Stimmung im Rennen), Vertrag bis, Gehalt. Nach dem Rennen: Mischung aus alter
+  Stimmung, Funk-Stimmung am Rennende, Punkte, Ausfall, vor dem Teamkollegen. Gespräch einmal je Wochenende: Loben,
+  Bessere Zeiten versprechen (in 3 Rennen keine Punkte → −15), Druck machen. Vertrag +1 Jahr (Prämie 25 %, Gehalt +8 %,
+  nur bei Stimmung ≥ 35).
+- **Partner**: Titelsponsor mit Saisonziel (Bonus), 3 Sponsoren mit Rennzielen passend zur Teamstärke (Punkte, Top 5,
+  Podium, beide im Ziel, beide in den Punkten, Plätze gutmachen). Fiktive Namen.
+- **Vorstand und Ruf**: Saisonziel = Platz nach Grundtempo; Ruf 0–100 ändert sich je Rennen nach Teampunkten gegenüber
+  der Erwartung (max. ±6), minus bei Kontostand im Minus; Urteil am Saisonende. (Entlassung/Angebote: M7)
+- Test: `node tests/season.mjs` jetzt mit Management (Projekt, Bericht, Buchungen)

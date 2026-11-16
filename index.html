@@ -142,7 +142,10 @@
         <button id="modeSingle" class="mode-btn">Einzelrennen</button>
         <button id="modeSeason" class="mode-btn">Saison 2026</button>
       </div>
-      <button id="seasonBtn" class="secondary-btn season-btn hidden">🏆 Saison-Übersicht</button>
+      <div class="pw-hqrow">
+        <button id="hqBtn" class="secondary-btn season-btn hidden">🏢 Teamzentrale</button>
+        <button id="seasonBtn" class="secondary-btn season-btn hidden">🏆 Saison-Übersicht</button>
+      </div>
       <div class="setup st-card">
         <div class="setup-label">DEIN TEAM</div>
         <div id="teamList" class="pw-teams" role="listbox" aria-label="Team auswählen"></div>
@@ -176,7 +179,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 6</div>
+      <div class="app-version">Version 7</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -184,6 +187,19 @@
         </label>
         <div id="seedInfo" class="seed-info"></div>
       </details>
+    </div>
+  </div>
+
+  <div id="hqScreen" class="overlay hidden">
+    <div class="sheet">
+      <h2 class="sheet-title">🏢 Teamzentrale</h2>
+      <div id="hqHead" class="pw-hqhead"></div>
+      <div id="hqTabs" class="season-tabs pw-hqtabs"></div>
+      <div id="hqBody" class="pw-hqbody"></div>
+      <div class="sheet-actions">
+        <button id="hqSeasonBtn" class="secondary-btn">🏆 Wertung</button>
+        <button id="hqCloseBtn" class="primary-btn">Schließen</button>
+      </div>
     </div>
   </div>
 

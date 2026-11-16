@@ -11,10 +11,13 @@ import { serializeRace, restoreRace } from '../js/sim/persist.js';
 import { playerCars, strategyOptions, applyStrategy, teamStep } from '../js/team/pitwall.js';
 import { radioStep } from '../js/team/radio.js';
 import { createWeekend, currentKind, applyWeekend, finishSession, trackSetWear } from '../js/team/weekend.js';
+import { initManagement, teamsForWeekend, afterWeekend, damageFrom, startProject, money } from '../js/team/management.js';
 import { newSeason, currentEntry, weekendParts, recordWeekend, driverStandings, teamStandings } from '../js/team/season.js';
 
 const team = 'williams';
 let season = newSeason(team);
+initManagement(season, TEAMS, DRIVERS);
+console.log('Projekt:', startProject(season, 'aero', 'small') || 'gestartet', '· Konto', money(season.mgmt.money), '· Ziel P' + season.mgmt.board.target);
 let fails = 0;
 for (let w = 0; w < 2; w++) {
   const entry = currentEntry(season);
@@ -24,7 +27,7 @@ for (let w = 0; w < 2; w++) {
   while (wk.idx < wk.seq.length) {
     const kind = currentKind(wk);
     const isS = ['fp', 'quali', 'sq'].includes(kind);
-    const opts = { track, teams: TEAMS, drivers: DRIVERS, seed: wk.seed + wk.idx * 101, weather: 'random', kind, length: 'short', playerTeam: team, difficulty: 'medium' };
+    const opts = { track, teams: teamsForWeekend(season, TEAMS, track), drivers: DRIVERS, seed: wk.seed + wk.idx * 101, weather: 'random', kind, length: 'short', playerTeam: team, difficulty: 'medium' };
     if (!isS) { const { laps, full } = distanceFor(track, kind, 'short'); Object.assign(opts, { laps, fullLaps: full, gridOrder: wk.grid[kind], gridPenalties: { ...wk.penalties[kind] } }); }
     let race = isS ? new Session(opts) : new Race(opts);
     const hook = r => { applyWeekend(r, wk); r.trackSets = () => { for (const c of playerCars(r)) trackSetWear(r, c); }; };
@@ -49,11 +52,17 @@ for (let w = 0; w < 2; w++) {
       }
     }
     const ok = race.phase === 'finished';
+    const u = damageFrom(race); wk.used = { wing: (wk.used?.wing || 0) + u.wing, chassis: (wk.used?.chassis || 0) + u.chassis };
+    if (kind === 'race') wk.moods = Object.fromEntries(playerCars(race).map(c => [c.id, Math.round(c.mood)]));
     if (!ok) fails++;
     console.log(`${ok ? 'OK ' : 'ERR'} R${entry.round} ${entry.track.padEnd(10)} ${kind.padEnd(6)} eigene: ${playerCars(race).map(c => `${c.id} P${race.standings().indexOf(c) + 1}`).join(', ')}`);
     finishSession(wk, race);
   }
   recordWeekend(season, wk, DRIVERS);
+  const notes = afterWeekend(season, TEAMS, DRIVERS, season.results[season.results.length - 1], wk.used || {}, wk.moods || {});
+  const m = season.mgmt;
+  console.log(`   Bericht: Konto ${money(m.money)} · Cap ${money(m.spent)} · Ruf ${m.board.rep} · Aero ${m.dev.aero} · PU-Alter ${m.pu.age} · Stimmung ${Object.entries(m.drivers).map(([k, d]) => k + ' ' + d.morale).join(' ')} · ${notes.join(' | ')}`);
+  console.log('   Buchungen:', m.report.log.map(l => `${l.what} ${l.amount.toFixed(1)}`).join('; '));
   season = JSON.parse(JSON.stringify(season));
 }
 console.log('Fahrer:', driverStandings(season, DRIVERS).slice(0, 5).map(x => `${x.d.id} ${x.pts}`).join(' · '));
