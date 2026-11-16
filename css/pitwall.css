@@ -181,3 +181,27 @@
 .pw-strat h3 { margin: -10px -10px 8px; padding: 9px 10px; background: rgba(255,255,255,.06); border-bottom: 2px solid #0c0e12; font-size: 16px; }
 .pw-snum { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--tc); color: #111; font: 800 12px var(--mono); }
 .pw-strat + .pw-strat { margin-top: 6px; }
+
+/* ---------- v5: Rennwochenende ---------- */
+.pw-status { margin-top: 6px; padding: 5px 8px; border-radius: 5px; background: #1b2029; font: 700 11.5px var(--mono); color: #c3cad6; }
+.pw-status.on { color: #4ade80; } .pw-status.bad { color: #fb923c; }
+.pw-cmp button small { display: block; font: 600 9px var(--mono); color: #8a94a7; margin-top: -2px; }
+.pw-cmp button { line-height: 1.1; }
+.pw-go { width: 100%; margin-top: 8px; }
+.pw-laps { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; font: 600 11.5px var(--mono); color: #e6e9ef; }
+.pw-laps i { font-style: normal; color: #fb923c; font-size: 10px; }
+.pw-laps .del { text-decoration: line-through; color: #8a94a7; }
+.pw-setup { display: grid; gap: 4px; margin-top: 4px; }
+.pw-srow { display: grid; grid-template-columns: 74px 38px 34px 38px 1fr; align-items: center; gap: 6px; font: 600 11px var(--mono); }
+.pw-srow button { height: 32px; border-radius: 5px; background: #222833; border: 2px solid #0c0e12; font: 800 15px var(--mono); color: #e6e9ef; }
+.pw-srow b { text-align: center; font-size: 15px; color: #facc15; }
+.pw-srow small { color: #8a94a7; font-size: 9.5px; }
+.pw-notes { margin-top: 4px; display: grid; gap: 5px; font-size: 12.5px; color: #e6f3ff; }
+.pw-notes small { display: block; font: 600 10px var(--mono); color: #8a94a7; margin-top: 1px; }
+.pw-alloc { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 4px; font: 600 11px var(--mono); color: #c3cad6; }
+.pw-alloc .pw-tyre { width: 18px; height: 18px; font-size: 9px; border-width: 2.5px; vertical-align: middle; font-style: normal; }
+.pw-hist { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 7px; font: 600 10.5px var(--mono); color: #c3cad6; }
+.pw-hist .pw-tyre { width: 18px; height: 18px; font-size: 9px; border-width: 2.5px; }
+.pw-hist i { font-style: normal; color: #5b6475; }
+.pw-hl { font: 700 9.5px var(--mono); letter-spacing: .1em; color: var(--muted); margin-right: 4px; }
+.sess-checks small { color: #8a94a7; }

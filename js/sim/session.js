@@ -131,9 +131,18 @@ export class Session extends Race {
     this.segState = 'run';
     const seg = this.segment;
     this.emit('start', `${this.info.name}${this.info.segments.length > 1 ? ` – ${seg.id}` : ''} beginnt (${Math.round(seg.dur / 60)} Minuten).`);
-    const out = Math.round(this.track.baseLap * 1.25 + 25);   // Boxengasse + Aufwärmrunde
     for (const c of this.cars) {
       if (c.retired || c.elimSeg !== null) { c.prog.runs = []; continue; }
+      // Pit Wall: eigene Autos fahren nur auf Anweisung (oder im Auto-Programm des Ingenieurs)
+      const runs = c.player && !c.autoRuns ? [] : this.planRuns(c, seg, 0);
+      c.prog = { runs, runIdx: 0, phase: c.inGarage ? 'garage' : c.prog.phase, pushLeft: c.prog.pushLeft || 0 };
+    }
+  }
+
+  // Ausfahrten eines Autos für den Abschnitt (ab Session-Uhr „from“)
+  planRuns(c, seg, from = 0) {
+    const out = Math.round(this.track.baseLap * 1.25 + 25);   // Boxengasse + Aufwärmrunde
+    {
       const r = this.rng;
       const lap = this.track.baseLap;
       let runs;
@@ -158,7 +167,45 @@ export class Session extends Race {
           ? [{ depart: r.range(20, seg.dur * 0.3), push: r.chance(0.4) ? 2 : 1, compound: 'S', fuel: 0.08 }, last]
           : [{ ...last, depart: r.range(Math.min(20, last.depart), last.depart) }];
       }
-      c.prog = { runs, runIdx: 0, phase: c.inGarage ? 'garage' : c.prog.phase, pushLeft: c.prog.pushLeft || 0 };
+      return runs.filter(x => x.depart >= from - 1);
+    }
+  }
+
+  // ---------- Pit Wall: Befehle für eigene Autos ----------
+  // Sofort rausfahren mit gewählter Mischung, Anzahl schneller Runden und Sprit
+  playerRun(car, { compound = 'S', push = 1, fuel = 0.1, set = null } = {}) {
+    if (!car.inGarage || car.retired || car.elimSeg !== null || this.segFlag || this.segState !== 'run' || (this.neutral && this.neutral.type === 'red')) return false;
+    car.prog.runs.splice(car.prog.runIdx, 0, { depart: this.clock, push, compound, fuel });
+    car.nextSet = set;
+    return true;
+  }
+  // Auto reinholen (nach der laufenden Runde in die Box)
+  playerBoxIn(car) {
+    if (car.inGarage || !car.prog || car.prog.phase === 'cool') return false;
+    car.prog.phase = 'cool';
+    return true;
+  }
+  // Auto-Programm des Ingenieurs für den Rest des Abschnitts
+  setAutoRuns(car, on) {
+    car.autoRuns = on;
+    if (on && car.elimSeg === null) car.prog.runs.splice(car.prog.runIdx, Infinity, ...this.planRuns(car, this.segment, this.clock).map(x => ({ ...x, depart: Math.max(x.depart, this.clock) })));
+    else car.prog.runs.splice(car.prog.runIdx, Infinity);
+  }
+
+  // Verkehr: Auto auf schneller Runde dicht hinter einem anderen (verwirbelte Luft, Behinderung)
+  trafficCheck() {
+    const tr = this.track, L = tr.L;
+    const on = this.cars.filter(c => !c.retired && !c.inPit && !c.inGarage);
+    for (const c of on) {
+      c.dirty = false;
+      if (c.prog.phase !== 'push') continue;
+      let best = Infinity;
+      for (const o of on) {
+        if (o === c) continue;
+        const g = ((o.d - c.d) % L + L) % L;
+        if (g < best) best = g;
+      }
+      if (best < Math.max(40, c.v * 1.2)) { c.dirty = true; c.trafficT = (c.trafficT || 0) + DT; }
     }
   }
 
@@ -201,6 +248,7 @@ export class Session extends Race {
       }
     }
     super.step();
+    this.trafficCheck();
     const n = this.neutral;
     if (n && n.type === 'red' && n.phase === 'stopping' && this.cars.every(c => c.retired || c.inGarage)) {
       n.phase = 'stopped';
@@ -222,7 +270,7 @@ export class Session extends Race {
     // Rennsprit-Anteil aus der Basis entfernen, Session-Sprit und Streckenentwicklung einrechnen
     const progress = Math.min(1, Math.max(0, car.d / (this.laps * this.track.L)));
     const evolution = -0.5 * Math.min(1, this.time / 2400);
-    return base - 2.2 * (1 - progress) + 2.2 * (car.fuel ?? 0.2) + evolution;
+    return base - 2.2 * (1 - progress) + 2.2 * (car.fuel ?? 0.2) + evolution + (car.dirty ? 0.4 : 0);
   }
 
   // Autos auf Aufwärm-/Auslaufrunde lassen Autos auf schneller Runde vorbei – meistens
@@ -260,6 +308,7 @@ export class Session extends Race {
     car.d += Math.max(0, car.garageOffset - 2);
     car.prog.phase = 'garage';
     car.pass = null;
+    if (car.player && this.onPlayerGarage) this.onPlayerGarage(car);
   }
 
   // Aus der Garage losfahren
@@ -270,6 +319,8 @@ export class Session extends Race {
     car.compound = w > 0.15 ? bestCompound(w, 20) : run.compound;
     car.fuel = run.fuel;
     car.tyreAge = 0; car.tyreWear = 0;
+    if (car.player && this.onPlayerTyres) this.onPlayerTyres(car);
+    car.runLaps = [];
     car.inGarage = false;
     car.stopTimer = 0;
     car.stoppedThisVisit = true;
@@ -287,8 +338,10 @@ export class Session extends Race {
     if (p.phase === 'push' && !car.inPit) {
       const rec = {
         id: ++this.lapSeq, seg: this.segIdx, time: lapTime, valid: !car.compromised,
-        label: formatLap(lapTime), compromised: Boolean(car.compromised),
+        label: formatLap(lapTime), compromised: Boolean(car.compromised), traffic: (car.trafficT || 0) > 1.5,
       };
+      car.trafficT = 0;
+      if (car.runLaps) car.runLaps.push(rec);
       rec.valid = true;
       car.sLaps.push(rec);
       car.compromised = false;
@@ -307,6 +360,7 @@ export class Session extends Race {
     } else if (p.phase === 'out') {
       if (car.d - (car.outStartD ?? -Infinity) < this.track.L * 0.6) return;   // nur über die Linie in der Boxengasse
       p.phase = this.segFlag ? 'cool' : 'push';
+      car.trafficT = 0;
     }
   }
 

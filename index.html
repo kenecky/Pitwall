@@ -156,11 +156,20 @@
           <div id="weatherSeg" class="seg seg-wx" role="radiogroup" aria-label="Wetter"></div>
           <div id="forecast" class="forecast"></div>
         </div>
+        <div class="setup-row st-card"><span class="setup-label">RENNWOCHENENDE</span>
+          <div id="sessionChecks" class="sess-checks">
+            <label><input type="checkbox" value="fp"> Freies Training <small>(Setup)</small></label>
+            <label><input type="checkbox" value="quali"> Qualifying</label>
+            <label><input type="checkbox" value="sprint"> Sprint <small>(mit Sprint-Qualifying)</small></label>
+            <label class="locked"><input type="checkbox" value="race" checked disabled> Rennen <small>(immer)</small></label>
+          </div>
+          <div id="weekendSteps" class="weekend-steps"></div>
+        </div>
         <div class="setup-row st-card"><span class="setup-label">DAUER</span>
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 4</div>
+      <div class="app-version">Version 5</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -183,6 +192,7 @@
       <h2 id="resultTitle" class="sheet-title">🏁 Rennergebnis</h2>
       <div id="resultBody"></div>
       <div class="sheet-actions">
+        <button id="endWkBtn" class="secondary-btn hidden">Wochenende beenden</button>
         <button id="newRaceBtn" class="primary-btn">Zur Startseite</button>
       </div>
     </div>

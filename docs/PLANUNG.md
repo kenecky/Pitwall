@@ -41,7 +41,7 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - [x] **M2 – Renn-Strategie komplett** (v2): Strategiewahl A/B vor dem Start, Energie-/Overtake-Modus, Teamorder,
       Circle of Doom mit Rejoin-Vorhersage, Undercut/Overcut-Hinweise mit Boxenverlust, SC/VSC-Fenster, Doppelstopp-Warnung
 - [x] **M3 – Teamfunk** (v3): Fahrer melden sich (Reifen, Wetter, Schäden, Verkehr, Beschwerden), Antwort per Schnellauswahl, Stimmung
-- [ ] **M4 – Rennwochenende**: Setup im Training (Flügel, Abstimmung, Rückmeldung), Quali-Runs timen (Verkehr, freie Runde),
+- [x] **M4 – Rennwochenende** (v5): Setup im Training (Flügel, Balance, Federung, Rückmeldung), Quali-Runs timen (Verkehr),
       Reifen-Kontingent, Sprint
 - [ ] **M5 – Saison**: Kalender, Speichern/Fortsetzen, Team- und Fahrerwertung
 - [ ] **M6 – Management**: Budget mit Obergrenze, Entwicklung Aero/Motor/Zuverlässigkeit, Ersatzteile und Schäden,
@@ -136,3 +136,27 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Rote Flagge: Rennleitung kündigt an, wann und wie neu gestartet wird („Neustart in 4 Minuten – stehender Start …“ bzw.
   „hinter dem Safety Car“) – im Log und als Popup; Zeit = geschätzte Bergung + Puffer, mindestens 4 Minuten Rennzeit;
   ist die Strecke dann nicht frei, wird um 2 Minuten verschoben (neues Popup)
+
+### v5 – Reifen-Historie, M4 Rennwochenende
+- **Reifen-Historie** je Fahrer im Rennen (Zeile „REIFEN BISHER“: Mischung, Runden, gebrauchter Satz) und im Ergebnis
+- **Wochenende** (`js/team/weekend.js`): Auswahl auf der Startseite (Training, Qualifying, Sprint mit Sprint-Qualifying, Rennen
+  immer). Ablauf FP → SQ → Sprint → Quali → Rennen; nach jeder Session Ergebnis mit „Weiter: …“ oder „Wochenende beenden“.
+  Intro einmal vor der ersten Session. Startaufstellung aus Quali bzw. SQ; Startplatzstrafen aus Sessions gelten im nächsten Rennen.
+- **Training/Qualifying für eigene Autos** (Session-Konsole je Fahrer-Reiter): Mischung, neuer/gebrauchter Satz, Anzahl
+  schneller Runden (FP 1/3/5/8, Quali 1–3), Sprit (FP), RAUSFAHREN / REINHOLEN, Auto-Programm des Ingenieurs;
+  Status (Garage, Aufwärm-, schnelle, Auslaufrunde, „im Verkehr“), Grenze P16/P10 im Qualifying, Rundenliste mit Verkehr.
+  Ohne Ausfahrt keine Zeit. Runde muss vor der Zielflagge begonnen sein.
+- **Verkehr** (`Session.trafficCheck`): Auto auf schneller Runde dicht hinter einem anderen (< ~1,2 s) verliert Zeit
+  (+0,4 s/Runde-Rate, solange es dicht dran ist); Runde wird als „Verkehr“ markiert. Prognose vor dem Rausfahren:
+  Autos auf der Strecke, auf der Aufwärmrunde, gleich aus der Garage → niedrig/mittel/hoch.
+- **Setup** (`js/team/setup.js`): Flügel 1–11, Balance −5…+5, Federung 1–9; Optimum je Strecke (Flügel aus dem Anteil
+  schneller Geraden: Monaco ~9, Monza ~2; Balance/Federung fest aus der Strecken-ID). Verlust bis 1,4 s/Runde und mehr
+  Reifenverschleiß. Nach jeder Trainings-Ausfahrt Rückmeldung des Fahrers (Topspeed/Abtrieb, Unter-/Übersteuern,
+  zu hart/weich) – konstante Fahrer genauer. Änderbar nur in der Garage, ab dem ersten Qualifying Parc fermé.
+  KI-Teams: fester Setup-Verlust 0,08–0,38 s je Team und Wochenende.
+- **Reifen-Kontingent** je Fahrer: 8 S / 3 M / 2 H (Sprint-Wochenende 6 / 4 / 2), dazu 4 I / 3 W. Jede Ausfahrt und jeder
+  Rennstint nimmt einen Satz (neu oder am wenigsten gefahren); gebrauchte Sätze starten mit ihrem Verschleiß.
+  Strategen rechnen mit den verfügbaren Sätzen (Hinweis „Gebrauchte Sätze“). Unter Rot ebenfalls aus dem Kontingent.
+- **Sprint**: eigene Strategie (Soft/Medium/Hard ohne Stopp), Punkte im Ergebnis wie Rennen (Wertung kommt mit M5)
+- KI-Rennleitung in Sessions: Flaggen, rote Flagge bei schweren Unfällen, Fortsetzung oder Abbruch, Kommissare
+- Tests: `node tests/weekend.mjs [strecke] [sprint]`

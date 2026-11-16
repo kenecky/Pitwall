@@ -347,7 +347,7 @@ export class Race {
     let warm = C.warm && fresh < tr.L * 1.1 ? C.warm * (1 - fresh / (tr.L * 1.1)) : 0;
     // danach 2–3 Runden Spitzen-Grip (darum funktioniert der Undercut)
     if (C.warm && fresh >= tr.L * 1.1 && fresh < tr.L * 3.5) warm -= 0.6 * (1 - (fresh - tr.L * 1.1) / (tr.L * 2.4));
-    let pace = car.player ? paceOf(car).dt + tacticOf(car).dt + moodOf(car).dt : 0;
+    let pace = (car.player ? paceOf(car).dt + tacticOf(car).dt + moodOf(car).dt : 0) + (car.setupDt || 0);   // Pit Wall: Setup (alle Autos)
     if (car.letBy) pace += 1.2;   // Teamorder: vom Gas gehen, damit der Teamkollege aufschließt
     return tr.baseLap + car.basePenalty + (C.wet ? 0 : C.offset) + wet + deg + 2.2 * (1 - progress) + car.lapNoise + dmg + careful + warm + pace;
   }
@@ -451,7 +451,7 @@ export class Race {
       car.d += car.move;
       if (car.finished) { this.coolDown(car, prev); continue; }
       // Pit Wall: Reifenverschleiß live (je gefahrenem Meter); unter Neutralisierung und in der Box kaum
-      if (car.player && car.move > 0) car.tyreWear += car.move / tr.L * (car.inPit ? 0.1 : this.neutral ? 0.35 : paceOf(car).wear * tacticOf(car).wear);
+      if (car.player && car.move > 0) car.tyreWear += car.move / tr.L * (car.inPit ? 0.1 : this.neutral ? 0.35 : paceOf(car).wear * tacticOf(car).wear * (car.setupWear || 1));
       this.handleCrossings(car, prev);
       checkPendingIncident(this, car, prev);
       if (car.limp && !car.retired) updateLimp(this, car);
@@ -993,6 +993,7 @@ export class Race {
     car.cheapStop = false;
     car.boxCall = null;
     car.tyreAge = 0; car.tyreWear = 0;
+    if (car.player && this.onPlayerTyres) this.onPlayerTyres(car);
     car.freshD = car.d;
     car.stops++;
     rollUnsafeRelease(this, car);

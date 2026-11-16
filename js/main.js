@@ -6,7 +6,7 @@ import { SEASON_2026 } from './data/season2026.js';
 import { Intro, INTRO_DUR, INTRO_TRACKS, introInfo } from './ui/intro.js';
 import { playIntroMusic } from './ui/introMusic.js';
 import { buildTrack } from './sim/trackModel.js';
-import { Race, DT, COMPOUNDS } from './sim/race.js';
+import { Race, DT, COMPOUNDS, formatLap } from './sim/race.js';
 import { bestCompound } from './sim/tyres.js';
 import { randomSeed } from './util/rng.js';
 import { trackStatus } from './control/flags.js';
@@ -28,7 +28,11 @@ import {
 } from './team/pitwall.js';
 import { radioStep, answer, openMessage, ownCall, OWN_CALLS, moodLabel } from './team/radio.js';
 
-export const VERSION = 4;
+import { Session } from './sim/session.js';
+import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
+import { SETUP_KEYS, feedback } from './team/setup.js';
+
+export const VERSION = 5;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -166,14 +170,41 @@ let touching = false;
 const prevD = new Map();
 const ui = { sel: {}, built: null, lastOwnEv: 0 };
 
+// Neues Rennwochenende (Startseite)
+let wk = null;
+const SESSION_KINDS = new Set(['fp', 'quali', 'sq']);
 function newRace(seed = randomSeed()) {
   track = getTrack(settings.trackId);
-  const { laps, full } = distanceFor(track, 'race', settings.length);
+  const parts = settings.parts || ['fp', 'quali'];
+  wk = createWeekend({ parts, seed, trackId: track.def.id, carIds: DRIVERS.filter(d => d.team === settings.teamId).map(d => d.id) });
+  prepareSession();
+  $('seedInfo').textContent = `Wochenende #${seed}`;
+  $('seedInput').value = '';
+  $('resultScreen').classList.add('hidden');
+  $('startScreen').classList.remove('hidden');
+  renderStart();
+  if (INTRO_TRACKS.has(track.def.id)) setTimeout(() => loadScenery(track.def.id), 300);
+  refreshUi();
+  renderSpeedBtns();
+}
+
+// Nächste Session des Wochenendes aufbauen (Training, Qualifying, Sprint, Rennen)
+function prepareSession() {
+  const kind = currentKind(wk);
+  const isS = SESSION_KINDS.has(kind);
+  const opts = {
+    track, teams: TEAMS, drivers: DRIVERS, seed: wk.seed + wk.idx * 101, weather: settings.weatherMode, kind,
+    length: settings.length, difficulty: 'medium', playerTeam: settings.teamId,
+  };
+  if (!isS) {
+    const { laps, full } = distanceFor(track, kind, settings.length);
+    Object.assign(opts, { laps, fullLaps: full, gridOrder: wk.grid[kind], gridPenalties: { ...wk.penalties[kind] } });
+  }
   map.setTrack(track);
-  race = new Race({
-    track, teams: TEAMS, drivers: DRIVERS, seed, weather: settings.weatherMode, laps, fullLaps: full,
-    kind: 'race', difficulty: 'medium', playerTeam: settings.teamId,
-  });
+  race = isS ? new Session(opts) : new Race(opts);
+  applyWeekend(race, wk);
+  race.trackSets = () => { for (const c of playerCars(race)) trackSetWear(race, c); };
+  race.onPlayerGarage = onGarage;
   paused = true;
   acc = 0;
   resultShown = false;
@@ -187,15 +218,22 @@ function newRace(seed = randomSeed()) {
   ui.lastOwnEv = 0;
   ui.lastMsg = 0;
   ui.noticeSeen = 0;
-  ui.wallCar = null;
-  $('seedInfo').textContent = `Rennen #${seed}`;
-  $('seedInput').value = '';
-  $('resultScreen').classList.add('hidden');
-  $('startScreen').classList.remove('hidden');
-  renderStart();
-  if (INTRO_TRACKS.has(track.def.id)) setTimeout(() => loadScenery(track.def.id), 300);
-  refreshUi();
-  renderSpeedBtns();
+  ui.run = {};
+}
+
+// Auto kommt nach einer Ausfahrt in die Garage: Rückmeldung des Fahrers (Training) bzw. Rundenzeit (Qualifying)
+function onGarage(car) {
+  const laps = (car.runLaps || []).filter(l => l.valid);
+  if (race.kind === 'fp' && laps.length) {
+    const fb = feedback(race.track, wk.setup[car.id], car.driver, race.time + (wk.runs[car.id]++) * 7.3);
+    wk.notes[car.id].push({ text: fb.text, setup: { ...wk.setup[car.id] }, best: Math.min(...laps.map(l => l.time)), n: laps.length });
+    race.emit('radio', `Funk ${car.id}: „${fb.text}“`, { cars: [car.id], own: true });
+  } else if (laps.length) {
+    const b = Math.min(...laps.map(l => l.time));
+    const pos = race.segmentRanking ? race.segmentRanking().indexOf(car) + 1 : 0;
+    race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „${formatLap(b)}, du bist P${pos}.${laps.some(l => l.traffic) ? ' Da war Verkehr auf der Runde.' : ''}“`, { cars: [car.id], own: true });
+  }
+  car.runLaps = [];
 }
 
 // ---------- Startseite ----------
@@ -241,6 +279,10 @@ function renderStart() {
   $('evRound').textContent = '';
   $('gpInfo').innerHTML = `<b>${def.grandPrix.replace('Großer Preis ', 'GP ')}</b><div><span>${race.laps}</span> Runden</div><div><span>${(def.lengthM / 1000).toFixed(3).replace('.', ',')}</span> km</div>`;
   renderSegs();
+  const parts = settings.parts || ['fp', 'quali'];
+  for (const cb of $('sessionChecks').querySelectorAll('input')) cb.checked = cb.value === 'race' || parts.includes(cb.value);
+  $('weekendSteps').innerHTML = wk.seq.map((k, i) => `<span class="wstep${i < wk.idx ? ' done' : i === wk.idx ? ' now' : ''}">${SESSION_SHORT[k]}</span>`).join('<span class="wsep">›</span>');
+  $('startBtn').textContent = wk.seq.length > 1 ? `Wochenende starten · ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
   const wx = race.weather;
   $('forecast').textContent = !wx.showers.length ? '☀️ Vorhersage: trocken'
     : wx.wetness > 0.2 ? `🌧 Vorhersage: Regen zum Start${wx.showers.length > 1 ? ', später weitere Schauer' : ''}`
@@ -260,6 +302,15 @@ $('gpList').addEventListener('click', e => {
   settings.trackId = b.dataset.track;
   saveSettings(settings);
   newRace();
+});
+$('sessionChecks').addEventListener('change', e => {
+  // Sprint nur mit Qualifying (Startaufstellung fürs Rennen)
+  const box = v => $('sessionChecks').querySelector(`input[value="${v}"]`);
+  if (e.target.value === 'sprint' && e.target.checked) box('quali').checked = true;
+  if (e.target.value === 'quali' && !e.target.checked) box('sprint').checked = false;
+  settings.parts = [...$('sessionChecks').querySelectorAll('input:checked')].map(x => x.value).filter(v => v !== 'race');
+  saveSettings(settings);
+  newRace(race.seed);
 });
 $('seedInput').addEventListener('change', e => {
   const v = parseInt(e.target.value, 10);
@@ -353,13 +404,14 @@ function runIntro(done, scenery) {
 }
 
 function startRace() {
-  if (INTRO_TRACKS.has(race.track.def.id) && !race.introShown) {
-    race.introShown = true;
+  if (INTRO_TRACKS.has(race.track.def.id) && !wk.introShown) {
+    wk.introShown = true;
     playIntro(() => startRace());
     return;
   }
-  if (!race.strategyDone) { showStrategy(); return; }
+  if (!race.isSession && !race.strategyDone) { showStrategy(); return; }
   $('startScreen').classList.add('hidden');
+  $('resultScreen').classList.add('hidden');
   race.start('standing');
   setSpeed(Math.max(4, settings.speed));
   paused = false;
@@ -455,8 +507,15 @@ function refreshUi() {
 }
 
 function updateStatus() {
-  $('lapLabel').textContent = race.phase === 'formation' ? 'FORMATION' : race.preStart ? 'START' : 'LAP';
-  $('lap').textContent = race.preStart ? `${race.laps} LAPS` : `${race.leaderLap}/${race.laps}`;
+  if (race.isSession) {
+    $('lapLabel').textContent = race.info.short;
+    const rem = race.segState === 'break' ? race.breakLeft : race.remaining;
+    const mm = `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, '0')}`;
+    $('lap').textContent = race.phase === 'pre' ? 'Start' : race.phase === 'finished' ? 'Ende' : race.segState === 'break' ? `Pause ${mm}` : `${race.segment.id} ${mm}`;
+  } else {
+    $('lapLabel').textContent = race.phase === 'formation' ? 'FORMATION' : race.preStart ? 'START' : race.kind === 'sprint' ? 'SPRINT' : 'LAP';
+    $('lap').textContent = race.preStart ? `${race.laps} LAPS` : `${race.leaderLap}/${race.laps}`;
+  }
   const running = race.phase === 'running' || race.phase === 'chequered' || race.phase === 'finished';
   $('clock').textContent = formatClock(running ? race.time : 0);
   const wl = weatherLabel(race.weather);
@@ -511,6 +570,7 @@ function buildWall() {
         <span class="pw-life"><b data-f="life"></b></span>
         <span class="pw-meta" data-f="meta"></span>
       </div>
+      <div class="pw-hist" data-f="hist"></div>
       <div class="pw-label">TEMPO</div>
       <div class="pw-seg">${PACE_ORDER.map(p => `<button data-pace="${p}"><b>${PACE[p].short}</b><small data-l="${p}"></small></button>`).join('')}</div>
       <div class="pw-hold" data-f="hold"></div>
@@ -556,6 +616,7 @@ function fmtGap(g) {
 const lapsTxt = x => (x >= 99 ? '99+' : x < 1 ? '<1' : String(Math.floor(x)));
 
 function renderWall() {
+  if (race.isSession) { renderSessionWall(); return; }
   if (ui.built !== race) buildWall();
   const st = race.standings();
   const lifeCol = v => (v > 55 ? '#22c55e' : v > 30 ? '#facc15' : v > 15 ? '#f97316' : '#ef4444');
@@ -603,6 +664,8 @@ function renderWall() {
     f('life').style.width = `${life}%`;
     f('life').style.background = lifeCol(life);
     f('meta').innerHTML = `<b>${life}%</b> · ${car.tyreAge} Rd · ${car.stops} St`;
+    const hs = (car.stintLog || []).map(x => x.c + x.laps).join('|');
+    if (f('hist').dataset.sig !== hs) { f('hist').dataset.sig = hs; f('hist').innerHTML = `<span class="pw-hl">REIFEN BISHER</span>${histHtml(car)}`; }
     // Tempo mit Reifen-Runden je Stufe
     const toGo = Math.max(0, race.laps - car.lap);
     for (const b of el.querySelectorAll('[data-pace]')) {
@@ -731,6 +794,7 @@ $('wall').addEventListener('click', e => {
   if (!b || b.disabled || !race) return;
   sound.unlock();
   if (b.dataset.wtab) { ui.wallCar = b.dataset.wtab; renderWall(); $('panel-wall').scrollTop = 0; return; }
+  if (race.isSession) { sessionClick(e, b); return; }
   if (b.dataset.order) {
     if (b.dataset.order === 'swap') { const r = swapCars(race); ui.orderMsg = r.ok ? '' : r.why; }
     else { setTeamOrder(race, b.dataset.order); ui.orderMsg = ''; }
@@ -764,6 +828,194 @@ $('wall').addEventListener('click', e => {
   }
   renderWall();
 });
+
+// ---------- Reifen-Historie (Rennen) ----------
+function histHtml(car) {
+  const log = car.stintLog || [];
+  if (!log.length) return `<span class="pw-tyre ${car.compound}">${car.compound}</span>`;
+  return log.map((x, i) => `<span class="pw-tyre ${x.c}">${x.c}</span><span>${x.laps} Rd${x.used > 0 ? ` (gebr. ${x.used})` : ''}${i === log.length - 1 && !car.finished && !car.retired ? ' · jetzt' : ''}</span>`).join('<i>›</i>');
+}
+
+// ---------- Training / Qualifying: Ausfahrten, Verkehr, Setup ----------
+const RUN_PUSH = { fp: [1, 3, 5, 8], quali: [1, 2, 3], sq: [1, 2, 3] };
+function runCfg(car) {
+  if (!ui.run[car.id]) ui.run[car.id] = { c: race.weather.wetness > 0.15 ? bestCompound(race.weather.wetness, 20) : race.kind === 'fp' ? 'M' : 'S', fresh: race.kind !== 'fp', push: race.kind === 'fp' ? 3 : 1, fuel: race.kind === 'fp' ? 'high' : 'low' };
+  return ui.run[car.id];
+}
+function runSet(car) {
+  const cfg = runCfg(car);
+  const list = setsOf(wk, car.id, cfg.c);
+  const fresh = list.find(s => s.laps < 0.05), used = list.find(s => s.laps >= 0.05);
+  return cfg.fresh ? fresh || used || null : used || fresh || null;
+}
+// Verkehrs-Prognose fürs Rausfahren: Autos auf der Aufwärmrunde und Autos, die gleich aus der Garage kommen
+function trafficForecast(car) {
+  const others = race.cars.filter(c => c !== car && !c.retired && (c.elimSeg === null || c.elimSeg === undefined));
+  const outlap = others.filter(c => !c.inGarage && c.prog.phase === 'out').length;
+  const onTrack = others.filter(c => !c.inGarage).length;
+  const soon = others.filter(c => c.inGarage && c.prog.runs[c.prog.runIdx] && c.prog.runs[c.prog.runIdx].depart - race.clock < 60).length;
+  const score = outlap + soon * 0.8 + onTrack * 0.15;
+  return { level: score < 2.5 ? 'niedrig' : score < 5 ? 'mittel' : 'hoch', cls: score < 2.5 ? 'free' : score < 5 ? 'mid' : 'traffic', outlap, soon, onTrack };
+}
+function sessStatus(car) {
+  if (car.retired) return 'Ausgeschieden (Defekt/Unfall)';
+  if (car.elimSeg !== null && car.elimSeg !== undefined) return `Ausgeschieden in ${race.info.segments[car.elimSeg].id}`;
+  if (car.inGarage) return 'In der Garage';
+  const p = car.prog.phase;
+  return p === 'out' ? 'Aufwärmrunde' : p === 'push' ? `Schnelle Runde${car.prog.pushLeft > 1 ? ` (noch ${car.prog.pushLeft})` : ''}${car.dirty ? ' · im Verkehr!' : ''}` : 'Auslaufrunde – kommt rein';
+}
+
+function buildSessionWall() {
+  const cars = playerCars(race);
+  ui.built = race;
+  if (!ui.wallCar || !race.carById[ui.wallCar]) ui.wallCar = cars[0].id;
+  const fp = race.kind === 'fp';
+  $('wall').innerHTML = `<div class="pw-dtabs">${cars.map(c => `<button data-wtab="${c.id}" style="--tc:${c.team.color}"><b>${esc(c.driver.last)}</b><span data-wt="${c.id}"></span></button>`).join('')}</div>` + cars.map(c => `
+    <div class="pw-car" data-car="${c.id}" style="--tc:${c.team.color}">
+      <div class="pw-head">
+        <span class="pw-pos" data-f="pos">–</span>
+        <span class="pw-name">${esc(c.driver.first)} ${esc(c.driver.last)}<small data-f="sub"></small></span>
+        <span class="pw-gaps" data-f="gaps"></span>
+      </div>
+      <div class="pw-status" data-f="status"></div>
+      <div class="pw-row"><span class="pw-tyre" data-f="tyre"></span><span class="pw-life"><b data-f="life"></b></span><span class="pw-meta" data-f="meta"></span></div>
+      <div class="pw-label">AUSFAHRT</div>
+      <div class="pw-cmp" data-f="cmp">${['S', 'M', 'H', 'I', 'W'].map(k => `<button class="${k}" data-rc="${k}">${k}<small></small></button>`).join('')}</div>
+      <div class="pw-seg ers"><button data-fresh="1">NEUER SATZ</button><button data-fresh="0">GEBRAUCHT</button><button data-auto="1">AUTO-PROGRAMM</button></div>
+      <div class="pw-label">SCHNELLE RUNDEN${fp ? ' · SPRIT' : ''}</div>
+      <div class="pw-seg">${RUN_PUSH[race.kind].map(n => `<button data-push="${n}">${n}</button>`).join('')}</div>
+      ${fp ? '<div class="pw-seg ers"><button data-fuel="low">WENIG SPRIT</button><button data-fuel="high">VIEL SPRIT</button><span></span></div>' : ''}
+      <div class="pw-rejoin" data-f="traffic"></div>
+      <button class="pw-boxbtn pw-go" data-act="go">RAUSFAHREN</button>
+      <div class="pw-hint" data-f="hint"></div>
+      <div class="pw-label">RUNDEN</div>
+      <div class="pw-laps" data-f="laps"></div>
+      ${fp ? `<div class="pw-label">SETUP <span data-f="lock"></span></div>
+      <div class="pw-setup">${Object.entries(SETUP_KEYS).map(([k, d]) => `<div class="pw-srow"><span>${d.name}</span><button data-set="${k}" data-d="-1">−</button><b data-sv="${k}"></b><button data-set="${k}" data-d="1">+</button><small>${d.lo} ↔ ${d.hi}</small></div>`).join('')}</div>
+      <div class="pw-label">RÜCKMELDUNG DES FAHRERS</div>
+      <div class="pw-notes" data-f="notes"></div>` : ''}
+      <div class="pw-label">REIFEN-KONTINGENT</div>
+      <div class="pw-alloc" data-f="alloc"></div>
+    </div>`).join('');
+}
+
+function renderSessionWall() {
+  if (ui.built !== race) buildSessionWall();
+  const st = race.standings();
+  const fp = race.kind === 'fp';
+  for (const el of $('wall').querySelectorAll('.pw-car')) {
+    const car = race.carById[el.dataset.car];
+    const f = k => el.querySelector(`[data-f="${k}"]`);
+    el.classList.toggle('hidden', car.id !== ui.wallCar);
+    const i = st.indexOf(car);
+    const tab = $('wall').querySelector(`[data-wtab="${car.id}"]`);
+    tab.classList.toggle('on', car.id === ui.wallCar);
+    tab.querySelector('span').textContent = `P${i + 1} · ${car.inGarage ? 'Garage' : 'Strecke'}`;
+    f('pos').textContent = `P${i + 1}`;
+    const t = race.rankTime(car);
+    f('sub').textContent = t ? `Bestzeit ${formatLap(t)}` : 'Noch keine Zeit';
+    // Abstand zur Spitze und zur Ausscheidungsgrenze
+    const lead = st[0] && race.rankTime(st[0]);
+    let gaps = t && lead ? `<em>zu P1</em> ${i === 0 ? '–' : `+${fmt(t - lead, 3)}`}` : '';
+    const seg = race.segment;
+    if (!fp && seg.keep && race.segState === 'run' && (car.elimSeg === null || car.elimSeg === undefined)) {
+      const rk = race.segmentRanking();
+      const cut = rk[seg.keep - 1], ct = cut && cut.segBest && cut.segBest[race.segIdx];
+      const my = car.segBest && car.segBest[race.segIdx];
+      const ri = rk.indexOf(car);
+      gaps += `<br><em>Grenze P${seg.keep}</em> ${ct ? formatLap(ct) : '–'}${my && ct ? ` (${ri < seg.keep ? 'sicher' : `+${fmt(my - ct, 3)}`})` : ''}`;
+    }
+    f('gaps').innerHTML = gaps;
+    f('status').textContent = sessStatus(car);
+    f('status').className = `pw-status${car.dirty ? ' bad' : car.inGarage ? '' : ' on'}`;
+    const C = COMPOUNDS[car.compound];
+    f('tyre').textContent = C.id; f('tyre').className = `pw-tyre ${C.id}`;
+    const life = car.inGarage ? null : tyreLife(race, car);
+    f('life').style.width = `${life ?? 0}%`;
+    f('life').style.background = '#22c55e';
+    f('meta').innerHTML = car.inGarage ? 'in der Box' : `<b>${life}%</b> · ${car.sLaps.length} Rd gezeitet`;
+    // Ausfahrt-Einstellungen
+    const cfg = runCfg(car);
+    const sum = setSummary(wk, car.id);
+    for (const b of el.querySelectorAll('[data-rc]')) {
+      const k = b.dataset.rc;
+      b.classList.toggle('on', cfg.c === k);
+      b.querySelector('small').textContent = sum[k].fresh;
+    }
+    for (const b of el.querySelectorAll('[data-fresh]')) b.classList.toggle('on', String(cfg.fresh ? 1 : 0) === b.dataset.fresh);
+    el.querySelector('[data-auto]').classList.toggle('on', Boolean(car.autoRuns));
+    for (const b of el.querySelectorAll('[data-push]')) b.classList.toggle('on', Number(b.dataset.push) === cfg.push);
+    for (const b of el.querySelectorAll('[data-fuel]')) b.classList.toggle('on', cfg.fuel === b.dataset.fuel);
+    const set = runSet(car);
+    const out = car.elimSeg !== null && car.elimSeg !== undefined;
+    const tf = trafficForecast(car);
+    f('traffic').className = `pw-rejoin ${tf.cls === 'free' ? 'free' : 'traffic'}`;
+    f('traffic').innerHTML = car.inGarage && !out ? `Verkehr beim Rausfahren: <b>${tf.level}</b> · ${tf.onTrack} auf der Strecke, ${tf.outlap} auf der Aufwärmrunde, ${tf.soon} fahren in 60 s raus` : '';
+    const go = el.querySelector('[data-act="go"]');
+    const blocked = race.phase !== 'running' || race.segState !== 'run' || race.segFlag || (race.neutral && race.neutral.type === 'red');
+    if (car.inGarage) {
+      go.textContent = set ? `RAUSFAHREN · ${COMPOUNDS[cfg.c].name} ${set.laps < 0.05 ? 'neu' : `gebr. ${Math.round(set.laps)} Rd`}` : 'KEIN SATZ VERFÜGBAR';
+      go.disabled = out || !set || blocked || car.retired;
+      go.className = 'pw-boxbtn pw-go';
+    } else {
+      go.textContent = car.prog.phase === 'cool' ? 'KOMMT REIN' : 'REINHOLEN';
+      go.disabled = car.prog.phase === 'cool';
+      go.className = 'pw-boxbtn pw-go called';
+    }
+    // Hinweis
+    let hint = '';
+    if (out) hint = 'Für diesen Teil ist der Fahrer ausgeschieden.';
+    else if (race.segState === 'break') hint = 'Pause – gleich geht es weiter.';
+    else if (race.segFlag) hint = 'Zielflagge – nur bereits begonnene Runden zählen noch.';
+    else if (car.inGarage && !fp && race.remaining < race.track.baseLap * 2.1 + 20 && !t) hint = 'Letzte Chance: Aufwärmrunde + schnelle Runde passen gerade noch!';
+    else if (car.inGarage && race.remaining < race.track.baseLap * 1.3 + 25) hint = 'Zu spät – die schnelle Runde würde nicht mehr vor der Zielflagge beginnen.';
+    else if (car.inGarage && !fp && !cfg.fresh) hint = 'Gebrauchte Reifen sind langsamer – neue Softs bringen die beste Zeit.';
+    else if (car.inGarage && !fp) hint = `Strecke wird schneller – späte Runden sind besser, aber riskanter (Verkehr, Rote Flagge).`;
+    else if (car.inGarage && fp) hint = 'Mehrere Runden mit viel Sprit zeigen das Renntempo, wenig Sprit die Quali-Pace. Nach jeder Ausfahrt gibt der Fahrer Rückmeldung.';
+    f('hint').textContent = hint;
+    // Runden
+    const laps = car.sLaps.slice(-6).reverse();
+    f('laps').innerHTML = laps.length ? laps.map(l => `<span class="${l.valid ? '' : 'del'}">${race.info.segments.length > 1 ? `${race.info.segments[l.seg].id} ` : ''}${l.label}${l.traffic ? ' <i>Verkehr</i>' : ''}${l.valid ? '' : ' <i>gestrichen</i>'}</span>`).join('') : '<span>–</span>';
+    // Setup (nur Training)
+    if (fp) {
+      const lock = wk.setupLocked ? 'Parc fermé' : car.inGarage ? '' : '· nur in der Garage änderbar';
+      f('lock').textContent = lock;
+      for (const [k] of Object.entries(SETUP_KEYS)) el.querySelector(`[data-sv="${k}"]`).textContent = wk.setup[car.id][k];
+      for (const b of el.querySelectorAll('[data-set]')) b.disabled = wk.setupLocked || !car.inGarage;
+      const notes = wk.notes[car.id].slice(-4).reverse();
+      const nsig = String(wk.notes[car.id].length);
+      if (f('notes').dataset.sig !== nsig) {
+        f('notes').dataset.sig = nsig;
+        f('notes').innerHTML = notes.length ? notes.map(n => `<div>„${esc(n.text)}“<small>Flügel ${n.setup.wing} · Balance ${n.setup.bal} · Federung ${n.setup.stiff} · ${n.n} Rd, beste ${formatLap(n.best)}</small></div>`).join('') : '<div>Noch keine Ausfahrt.</div>';
+      }
+    }
+    // Kontingent
+    f('alloc').innerHTML = Object.entries(sum).map(([k, v]) => `<span><i class="pw-tyre ${k}">${k}</i> ${v.fresh} neu${v.used.length ? ` · ${v.used.length} gebr.` : ''}</span>`).join('');
+  }
+}
+
+function sessionClick(e, b) {
+  const el = e.target.closest('[data-car]');
+  if (!el) return;
+  const car = race.carById[el.dataset.car];
+  const cfg = runCfg(car);
+  if (b.dataset.rc) cfg.c = b.dataset.rc;
+  else if (b.dataset.fresh) cfg.fresh = b.dataset.fresh === '1';
+  else if (b.dataset.push) cfg.push = Number(b.dataset.push);
+  else if (b.dataset.fuel) cfg.fuel = b.dataset.fuel;
+  else if (b.dataset.auto) race.setAutoRuns(car, !car.autoRuns);
+  else if (b.dataset.set) {
+    const k = b.dataset.set, d = SETUP_KEYS[k];
+    wk.setup[car.id][k] = Math.max(d.min, Math.min(d.max, wk.setup[car.id][k] + Number(b.dataset.d)));
+    applyWeekend(race, wk);
+  } else if (b.dataset.act === 'go') {
+    if (car.inGarage) {
+      const ok = race.playerRun(car, { compound: cfg.c, push: cfg.push, fuel: cfg.fuel === 'high' ? 0.7 : race.kind === 'fp' ? 0.15 : 0.05, set: runSet(car) });
+      if (ok) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Raus geht’s – ${cfg.push} schnelle Runde${cfg.push > 1 ? 'n' : ''} auf ${COMPOUNDS[cfg.c].name}.“`, { cars: [car.id], own: true });
+    } else if (race.playerBoxIn(car)) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Box, box – komm rein.“`, { cars: [car.id], own: true });
+  }
+  renderSessionWall();
+}
 
 // ---------- Circle of Doom: eine Runde als Zeit-Kreis, Rejoin nach einem Stopp ----------
 $('circleCars').addEventListener('click', e => {
@@ -863,7 +1115,7 @@ let stratOpts = {};
 function showStrategy() {
   const cars = playerCars(race);
   stratOpts = {};
-  for (const c of cars) { stratOpts[c.id] = strategyOptions(race, c); stratPick[c.id] = 'A'; }
+  for (const c of cars) { stratOpts[c.id] = strategyOptions(race, c, wk); stratPick[c.id] = 'A'; }
   renderStrategy();
   $('startScreen').classList.add('hidden');
   $('stratScreen').classList.remove('hidden');
@@ -894,6 +1146,10 @@ $('stratGo').addEventListener('click', () => {
 // ---------- Ergebnis ----------
 function showResults() {
   resultShown = true;
+  const nk = nextKind(wk);
+  $('newRaceBtn').textContent = nk ? `Weiter: ${SESSION_NAME[nk]}` : 'Zur Startseite';
+  $('endWkBtn').classList.toggle('hidden', !nk);
+  if (race.isSession) { showSessionResults(); return; }
   const st = race.standings();
   const leader = st[0];
   const mine = playerCars(race);
@@ -912,10 +1168,32 @@ function showResults() {
   const t = TEAM_BY_ID[race.playerTeam];
   $('resultTitle').textContent = `🏁 ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
   $('resultBody').innerHTML = `<div class="pw-sum"><b>${esc(t.name)}</b>: ${mine.map(c => `${c.id} ${c.retired ? 'DNF' : c.dsq ? 'DSQ' : 'P' + (st.indexOf(c) + 1)}`).join(' · ')} · <b>${teamPts} Punkte</b></div>
+    <table class="pw-res"><tbody>${rows}</tbody></table>
+    ${mine.map(c => `<div class="pw-hist"><b>${c.id}</b> ${histHtml(c)}</div>`).join('')}`;
+  $('resultTitle').textContent = `🏁 ${race.kind === 'sprint' ? 'Sprint' : 'Rennen'} · ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
+  $('resultScreen').classList.remove('hidden');
+}
+function showSessionResults() {
+  const st = race.standings();
+  const best = st[0] && race.rankTime(st[0]);
+  const rows = st.map((c, i) => {
+    const t = race.rankTime(c);
+    const seg = c.elimSeg !== null && c.elimSeg !== undefined ? race.info.segments[c.elimSeg].id : '';
+    return `<tr class="${c.player ? 'mine' : ''}"><td>${i + 1}</td><td class="tc" style="background:${c.team.color}"></td><td>${c.id}</td><td>${esc(c.team.short)}</td><td style="text-align:right">${t ? (i === 0 ? formatLap(t) : `+${fmt(t - best, 3)}`) : 'keine Zeit'}</td><td>${seg}</td></tr>`;
+  }).join('');
+  const mine = playerCars(race);
+  $('resultTitle').textContent = `⏱ ${race.info.name} · ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
+  $('resultBody').innerHTML = `<div class="pw-sum"><b>${esc(TEAM_BY_ID[race.playerTeam].name)}</b>: ${mine.map(c => `${c.id} P${st.indexOf(c) + 1}`).join(' · ')}${race.kind !== 'fp' ? ' – das ist die Startaufstellung.' : ''}</div>
     <table class="pw-res"><tbody>${rows}</tbody></table>`;
   $('resultScreen').classList.remove('hidden');
 }
-$('newRaceBtn').addEventListener('click', () => newRace());
+$('newRaceBtn').addEventListener('click', () => {
+  finishSession(wk, race);
+  if (wk.idx >= wk.seq.length) { newRace(); return; }
+  prepareSession();
+  startRace();
+});
+$('endWkBtn').addEventListener('click', () => newRace());
 
 // ---------- Bedienung ----------
 function setTab(tab) {

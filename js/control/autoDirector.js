@@ -21,8 +21,8 @@ function state(race) {
 }
 
 export function autoDirect(race) {
-  if (race.isSession) return;
   const ad = state(race);
+  if (race.isSession) { sessionDirect(race, ad); return; }
   const t = race.time;
   switch (race.phase) {
     case 'pre': return;
@@ -219,4 +219,24 @@ const WORK_RED = { yellow: 3, double: 4, vsc: 3, sc: 2.5, red: 1, pit: 1 };
 function notice(race, text) {
   race.emit('rc', `RENNLEITUNG: ${text}`);
   (race.rcNotices || (race.rcNotices = [])).push({ t: race.time, text });
+}
+
+// ---------- Training / Qualifying ----------
+// Flaggen wie im Rennen; statt VSC/SC gibt es nur die rote Flagge (Uhr steht). Danach Fortsetzung oder Abbruch.
+function sessionDirect(race, ad) {
+  if (race.phase !== 'running') return;
+  const t = race.time;
+  securityFor(race, ad, t);
+  const n = race.neutral;
+  const open = race.hazards.filter(h => !h.ended && t >= (ad.seen[h.id] ?? Infinity));
+  const need = Math.max(0, ...open.map(h => NEED_LEVEL[h.need] || 0));
+  if (!n && need >= 4 && race.segState === 'run' && !race.segFlag) { race.sessionRedFlag(); ad.sessRedAt = null; }
+  if (n && n.type === 'red' && n.phase === 'stopped') {
+    if (ad.sessRedAt == null) ad.sessRedAt = t;
+    if (!race.hazards.some(h => !h.ended) && t - ad.sessRedAt > 45) {
+      if (race.remaining < 50) race.sessionAbandon(); else race.sessionResume();
+      ad.sessRedAt = null;
+    }
+  }
+  stewards(race, ad, t);
 }

@@ -120,6 +120,15 @@ function activePair(race) {
 
 // Nach jedem Simulationsschritt: Teamorder abschließen
 export function teamStep(race) {
+  // Reifen-Historie je Auto: Mischung und gefahrene Runden pro Stint
+  if (!race.isSession && race.phase !== 'pre') for (const c of race.cars) {
+    if (!c.player) continue;
+    const log = c.stintLog || (c.stintLog = []);
+    const last = log[log.length - 1];
+    if (!last || last.c !== c.compound || c.tyreAge < last.laps || (last.stops !== c.stops)) log.push({ c: c.compound, laps: c.tyreAge, stops: c.stops, used: c.curSet ? Math.round(c.curSet.base || 0) : 0 });
+    else last.laps = c.tyreAge;
+  }
+  if (race.trackSets) race.trackSets();
   for (const a of race.cars) {
     if (!a.letBy) continue;
     const b = race.carById[a.letBy];
@@ -300,7 +309,8 @@ export function circleAngle(race, t) {
 
 // ---------- Rennstrategen ----------
 // Bewertet Stopp-Kombinationen mit dem Reifenmodell der Simulation und schlägt zwei Varianten vor (A und B).
-export function strategyOptions(race, car) {
+// wk (optional): Rennwochenende mit Reifenkontingent – gebrauchte Sätze starten mit ihrem Verschleiß
+export function strategyOptions(race, car, wk = null) {
   const laps = race.laps;
   const w = race.wear || 1;
   const loss = pitLoss(race, car);
@@ -314,28 +324,48 @@ export function strategyOptions(race, car) {
       { key: 'B', start: alt, stops: [], name: `${COMPOUNDS[alt].name}, Wechsel nach Wetter`, note: `${who}: Riskanter – ${alt === 'I' ? 'Intermediates bringen mehr Tempo, falls der Regen nachlässt' : 'Regenreifen sind sicherer, falls es noch mehr regnet'}.` },
     ];
   }
-  const stint = (id, n) => {
+  const stint = (id, n, age0 = 0) => {
     let t = 0;
-    for (let a = 0; a < n; a++) { const age = a * w; t += tyreLoss(id, age) + (age > COMPOUNDS[id].cliff * 0.95 ? 0.8 : 0); }   // Klippe meiden (Risiko)
-    return t + (COMPOUNDS[id].warm || 0);
+    for (let a = 0; a < n; a++) { const age = age0 + a * w; t += tyreLoss(id, age) + (age > COMPOUNDS[id].cliff * 0.95 ? 0.8 : 0); }   // Klippe meiden (Risiko)
+    return t + (age0 > 0.5 ? 0 : COMPOUNDS[id].warm || 0);
   };
+  // Verschleiß der Sätze, die für ein Muster genommen würden (bester zuerst, jeder Satz nur einmal)
+  const ages = pat => {
+    if (!wk || !wk.sets[car.id]) return pat.map(() => 0);
+    const taken = new Set();
+    return pat.map(c => {
+      const st = wk.sets[car.id].filter(x => x.c === c && !taken.has(x)).sort((a, b) => a.laps - b.laps)[0];
+      if (!st) return 99;
+      taken.add(st);
+      return st.laps;
+    });
+  };
+  if (race.kind === 'sprint') {
+    // Sprint: ohne Pflichtstopp – Soft oder Medium durchfahren
+    const opts = ['M', 'S', 'H'].map(c => ({ c, t: stint(c, laps, ages([c])[0]) })).sort((a, b) => a.t - b.t);
+    const mkS = (o, key) => ({ key, start: o.c, stops: [], delta: o.t - opts[0].t, name: `Ohne Stopp: ${COMPOUNDS[o.c].name}${ages([o.c])[0] > 0.5 ? ' (gebraucht)' : ''}`,
+      note: key === 'A' ? `${who}: ${COMPOUNDS[o.c].name} hält die ${laps} Runden am besten.` : `${who}: ${COMPOUNDS[o.c].name} – rund ${fmt(o.t - opts[0].t)} s langsamer gerechnet${o.c === 'S' ? ', aber mehr Grip in den ersten Runden' : ''}.` });
+    return [mkS(opts[0], 'A'), mkS(opts[1], 'B')];
+  }
   const cands = [];
   const PAT = [['M', 'H'], ['H', 'M'], ['S', 'H'], ['S', 'M'], ['M', 'S'], ['H', 'S'],
     ['S', 'M', 'H'], ['S', 'H', 'M'], ['M', 'H', 'S'], ['S', 'H', 'S'], ['M', 'M', 'S'], ['H', 'M', 'S'], ['S', 'M', 'S']];
   for (const p of PAT) {
     let best = null;
+    const g = ages(p);
+    if (g.includes(99)) continue;   // nicht genug Sätze dieser Mischung
     if (p.length === 2) {
       for (let a = 3; a <= laps - 3; a++) {
-        const t = stint(p[0], a) + stint(p[1], laps - a) + loss;
+        const t = stint(p[0], a, g[0]) + stint(p[1], laps - a, g[1]) + loss;
         if (!best || t < best.t) best = { t, laps: [a] };
       }
     } else {
       for (let a = 3; a <= laps - 6; a++) for (let b = a + 3; b <= laps - 3; b++) {
-        const t = stint(p[0], a) + stint(p[1], b - a) + stint(p[2], laps - b) + 2 * loss;
+        const t = stint(p[0], a, g[0]) + stint(p[1], b - a, g[1]) + stint(p[2], laps - b, g[2]) + 2 * loss;
         if (!best || t < best.t) best = { t, laps: [a, b] };
       }
     }
-    if (best) cands.push({ pat: p, ...best });
+    if (best) cands.push({ pat: p, ...best, ages: g });
   }
   cands.sort((x, y) => x.t - y.t);
   const A = cands[0];
@@ -350,6 +380,7 @@ export function strategyOptions(race, car) {
     if (key === 'A') note = `${who}: Auf dem Papier die schnellste Variante.${n === 1 ? ' Ein Stopp hält die Track Position.' : ' Zwei Stopps, dafür immer gute Reifen.'}`;
     else note = `${who}: Rund ${fmt(d)} s langsamer gerechnet${n > A.laps.length ? ', aber flexibel bei Safety Car und gut für den Undercut' : n < A.laps.length ? ', dafür ein Stopp weniger und weniger Verkehrsrisiko' : ', andere Startmischung als Alternative'}.`;
     if (c.pat[0] === 'S' && car.gridPos > 10) note += ' Softs helfen beim Start aus dem Mittelfeld.';
+    if (c.ages && c.ages.some(x => x > 0.5)) note += ` Gebrauchte Sätze: ${c.pat.map((k, i) => (c.ages[i] > 0.5 ? `${k} (${Math.round(c.ages[i])} Rd)` : null)).filter(Boolean).join(', ')}.`;
     if (wx.showers.length) note += ' Achtung: Regen ist möglich – Plan kann sich ändern.';
     return { key, start: c.pat[0], stops, name: `${n} Stopp${n > 1 ? 's' : ''}: ${desc}`, note, delta: d };
   };
@@ -359,6 +390,8 @@ export function strategyOptions(race, car) {
 export function applyStrategy(race, car, s) {
   car.compound = s.start;
   car.usedCompounds = new Set([s.start]);
+  car.stintLog = [];
+  if (race.onPlayerTyres) { car.curSet = null; race.onPlayerTyres(car); }   // Startsatz aus dem Kontingent
   car.plan = s.stops.map(x => ({ ...x }));
   car.planIdx = 0;
   car.advice = s.stops.map(x => ({ ...x }));
@@ -388,6 +421,7 @@ export function redTyres(race, car, compound) {
   car.redTyre = compound;
   car.compound = compound;
   car.tyreAge = 0; car.tyreWear = 0;
+  if (race.onPlayerTyres) race.onPlayerTyres(car);
   car.usedCompounds.add(compound);
   // Geplanten Stopp auf genau diese Mischung streichen – er ist damit erledigt
   const n = nextStop(car);
