@@ -179,7 +179,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 13</div>
+      <div class="app-version">Version 14</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -187,6 +187,17 @@
         </label>
         <div id="seedInfo" class="seed-info"></div>
       </details>
+    </div>
+  </div>
+
+  <!-- Kalender-Animation (Weiter zum nächsten Termin) -->
+  <div id="calAnim" class="pw-calanim hidden">
+    <div class="pw-calpage">
+      <div id="calAnimMo" class="mo"></div>
+      <div id="calAnimDay" class="day"></div>
+      <div id="calAnimWd" class="wd"></div>
+      <div class="bar"><i id="calAnimBar"></i></div>
+      <div id="calAnimEv" class="pw-calev"></div>
     </div>
   </div>
 
@@ -230,7 +241,7 @@
 
   <div id="wxScreen" class="overlay hidden">
     <div class="sheet wx-sheet">
-      <div class="sheet-head-x"><h2 class="sheet-title">WETTER · RADAR</h2><button id="wxCloseBtn" class="x-btn" aria-label="Schließen">✕</button></div>
+      <div class="sheet-head-x"><h2 class="sheet-title">WETTER · WOCHENENDE</h2><button id="wxCloseBtn" class="x-btn" aria-label="Schließen">✕</button></div>
       <div id="wxBody"></div>
     </div>
   </div>

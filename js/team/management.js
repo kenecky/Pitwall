@@ -133,7 +133,7 @@ export function refreshMarket(season, teams) {
     m.market.staff[k] = [0, 1, 2].map(i => person(`${seed}${k}${i}`, 50 + hash(`${seed}${k}${i}r`) * 45 + (i === 2 ? 5 : 0)));
   }
   // Sponsoren: je stärker Team und Ruf, desto mehr Geld
-  const tierF = { top: 1.25, mid: 1, back: 0.82 }[m.tier] * (0.85 + rep / 330) * (1 + (bLvl(m, 'marketing') - 1) * 0.07);
+  const tierF = { top: 1.25, mid: 1, back: 0.82 }[m.tier] * (0.85 + rep / 330) * (1 + (bLvl(m, 'marketing') - 1) * 0.07) * (m.hype || 1);
   const names = SPONSORS.filter(n => n !== (m.titleSponsor && m.titleSponsor.name) && !m.sponsors.some(x => x.name === n));
   const pickName = i => names[Math.floor(hash(`${seed}n${i}`) * names.length + i * 3) % names.length];
   if (!m.titleSponsor) {
@@ -638,6 +638,7 @@ export function calendarEvents(season, calendar, trackName) {
   for (const p of (m && m.projects) || []) ev.push({ date: p.done, kind: 'dev', text: `${DEV[p.type].name}: ${DEV_SIZE[p.size].name} fertig` });
   if (m && m.construction) ev.push({ date: m.construction.done, kind: 'build', text: `${BUILDINGS[m.construction.key].name} Stufe ${m.construction.lvl} fertig` });
   for (const e of (m && m.events) || []) if (!e.done) ev.push({ date: e.date, kind: 'sponsor', id: e.id, text: `${SPONSOR_EVENTS[e.type].name} · ${e.sponsor}` });
+  if (m) ev.push(...agendaEvents(season, calendar, trackName));
   // bei gleichem Datum: Fertigstellungen vor dem Rennen
   return ev.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'race') - (b.kind === 'race'));
 }
@@ -723,4 +724,158 @@ export function resolveSponsorEvent(season, id, choice) {
   sp.happy = clamp(sp.happy + 10, 0, 100);
   if (t.driver && m.drivers[choice]) m.drivers[choice].morale = clamp(m.drivers[choice].morale + t.mood, 0, 100);
   return `${t.name} bei ${sp.name}: +${money(amount)}${t.driver && m.drivers[choice] ? `, Stimmung ${choice} ${t.mood}` : ''}. ${sp.name} ist zufrieden.`;
+}
+
+// ---------- Weitere Termine: Präsentation, Medientag, Vorstandssitzung, Vertragsende ----------
+const BOARD_ROUNDS = [6, 12, 18];
+function agendaEvents(season, calendar, trackName) {
+  const m = season.mgmt;
+  const done = m.agenda || (m.agenda = {});
+  const out = [];
+  const add = (id, date, kind, text, extra = {}) => { if (!done[id] && date >= season.date) out.push({ id, date, kind, text, ...extra }); };
+  // Präsentation des neuen Autos (Vorsaison)
+  if (season.round === 0) add(`present-${season.year}`, `${season.year}-02-16`, 'present', 'Präsentation des neuen Autos');
+  calendar.forEach((e, i) => {
+    if (i < season.round) return;
+    // Medientag am Donnerstag vor jedem Rennen
+    add(`media-${season.year}-${e.round}`, addDays(raceDate(season, e), -3), 'media', `Medientag · ${trackName(e.track)}`, { round: e.round });
+    // Vorstandssitzung nach Rennen 6, 12, 18
+    if (BOARD_ROUNDS.includes(e.round)) add(`board-${season.year}-${e.round}`, addDays(raceDate(season, e), 3), 'board', 'Vorstandssitzung · Zwischenbilanz', { round: e.round });
+  });
+  // Vertragsende: Fahrer, deren Vertrag in diesem Jahr ausläuft
+  for (const [id, d] of Object.entries(m.drivers)) {
+    if (d.contractEnd !== season.year) continue;
+    const date = (m.remind && m.remind[id]) || `${season.year}-09-07`;
+    add(`contract-${id}-${season.year}`, date, 'contract', `Vertrag von ${id} läuft aus`, { driver: id });
+  }
+  return out;
+}
+
+const MEDIA_Q = [
+  { q: 'Was ist Ihr Ziel für dieses Wochenende?', a: [
+    { t: '„Wir wollen um die Spitze kämpfen.“', eff: { rep: 2, morale: 3, hype: true } },
+    { t: '„Wir schauen von Rennen zu Rennen.“', eff: { rep: 1 } },
+    { t: '„Das Auto ist noch nicht, wo es sein muss.“', eff: { rep: -2, morale: -3, sponsor: -3 } }] },
+  { q: 'Gibt es Spannungen zwischen Ihren beiden Fahrern?', a: [
+    { t: '„Nein, die beiden verstehen sich sehr gut.“', eff: { morale: 2 } },
+    { t: '„Ein bisschen Rivalität schadet nicht.“', eff: { morale: -1, rep: 1 } },
+    { t: '„Kein Kommentar.“', eff: { rep: -1 } }] },
+  { q: 'Ihre Sponsoren wünschen sich mehr Präsenz. Wie reagieren Sie?', a: [
+    { t: '„Unsere Partner sind uns sehr wichtig.“', eff: { sponsor: 5 } },
+    { t: '„Die Ergebnisse sprechen für sich.“', eff: { rep: 1, sponsor: -4 } },
+    { t: '„Darüber reden wir intern.“', eff: {} }] },
+  { q: 'Wann kommen die nächsten Upgrades?', a: [
+    { t: '„Schon sehr bald – das Paket ist fast fertig.“', eff: { sponsor: 3, rep: 1, hype: true } },
+    { t: '„Wir lassen uns Zeit, Qualität geht vor.“', eff: { rep: 1 } },
+    { t: '„Das Budget ist eng.“', eff: { sponsor: -4, rep: -1 } }] },
+  { q: 'Wie bewerten Sie die Arbeit der Rennleitung?', a: [
+    { t: '„Sie machen einen schwierigen Job gut.“', eff: { rep: 1 } },
+    { t: '„Zu viele Strafen in letzter Zeit.“', eff: { morale: 3, rep: -2 } },
+    { t: '„Kein Kommentar.“', eff: {} }] },
+  { q: 'Gerüchte besagen, ein Top-Team will Ihren Fahrer. Was sagen Sie?', a: [
+    { t: '„Er fühlt sich bei uns wohl und bleibt.“', eff: { morale: 4 } },
+    { t: '„Jeder ist ersetzbar.“', eff: { morale: -6, rep: 1 } },
+    { t: '„Gerüchte kommentieren wir nicht.“', eff: {} }] },
+];
+
+// Dialog-Inhalt für einen Termin: { title, text, options: [{ key, label, sub?, secondary? }] }
+export function agendaDialog(season, ev, teamPos) {
+  const m = season.mgmt;
+  if (ev.kind === 'present') return {
+    title: '🎉 Präsentation des neuen Autos',
+    text: 'Die Welt soll das neue Auto sehen. Wie groß soll die Präsentation werden?',
+    options: [
+      { key: 'big', label: 'Große Show', sub: '2,5 Mio. $ · Ruf und Sponsoren +' },
+      { key: 'small', label: 'Schlicht in der Fabrik', sub: '0,5 Mio. $' },
+      { key: 'online', label: 'Nur online', sub: 'kostenlos · etwas Ruf −', secondary: true }] };
+  if (ev.kind === 'media') {
+    const q = MEDIA_Q[Math.floor(hash(`${season.year}${ev.round}media`) * MEDIA_Q.length)];
+    return { title: '🎤 Medientag', text: `Frage der Presse: <b>${q.q}</b>`, options: q.a.map((a, i) => ({ key: i, label: a.t })), q };
+  }
+  if (ev.kind === 'board') {
+    const t = m.board.target;
+    return {
+      title: '🏛 Vorstandssitzung',
+      text: `Zwischenbilanz nach Rennen ${ev.round}: Teamwertung <b>P${teamPos}</b>, Saisonziel <b>P${t}</b>, Vertrauen des Vorstands <b>${m.board.rep}</b>.`,
+      options: [
+        { key: 'budget', label: 'Zusatzbudget beantragen', sub: 'nur bei gutem Vertrauen' },
+        { key: 'keep', label: 'Ziel bestätigen', sub: teamPos <= t ? 'auf Kurs' : 'riskant' },
+        { key: 'lower', label: 'Ziel senken (P' + Math.min(11, t + 1) + ')', sub: 'Vertrauen −', secondary: true }] };
+  }
+  if (ev.kind === 'contract') {
+    const d = m.drivers[ev.driver];
+    return {
+      title: `📝 Vertragsende ${ev.driver}`,
+      text: `Der Vertrag läuft Ende ${season.year} aus. Gehalt ${money(d.salary)}/Jahr, Stimmung ${d.morale}.`,
+      options: [
+        { key: 'y1', label: '+1 Jahr', sub: 'Prämie 25 %, Gehalt +8 %' },
+        { key: 'y2', label: '+2 Jahre', sub: 'Prämie 40 %, Gehalt +12 %, Stimmung +' },
+        { key: 'later', label: 'Später entscheiden', sub: 'Erinnerung in 4 Wochen', secondary: true }] };
+  }
+  return null;
+}
+
+export function resolveAgenda(season, ev, choice, teamPos) {
+  const m = season.mgmt;
+  m.agenda = m.agenda || {};
+  const markDone = () => { m.agenda[ev.id] = true; };
+  const allMood = d => { for (const x of Object.values(m.drivers)) x.morale = clamp(x.morale + d, 0, 100); };
+  const allSponsors = d => { for (const sp of [m.titleSponsor, ...m.sponsors].filter(Boolean)) sp.happy = clamp((sp.happy ?? 70) + d, 0, 100); };
+  if (ev.kind === 'present') {
+    markDone();
+    if (choice === 'big') { spend(m, 2.5, 'Präsentation: große Show', false); m.board.rep = clamp(m.board.rep + 5, 0, 100); allSponsors(10); m.hype = 1.08; return 'Große Show: Fans und Sponsoren sind begeistert (Ruf +5, Sponsoren zufriedener, bessere Angebote).'; }
+    if (choice === 'small') { spend(m, 0.5, 'Präsentation in der Fabrik', false); allSponsors(3); return 'Schlichte Präsentation in der Fabrik – solide.'; }
+    m.board.rep = clamp(m.board.rep - 2, 0, 100);
+    return 'Nur online präsentiert – das Echo ist mager (Ruf −2).';
+  }
+  if (ev.kind === 'media') {
+    markDone();
+    const q = MEDIA_Q[Math.floor(hash(`${season.year}${ev.round}media`) * MEDIA_Q.length)];
+    const a = q.a[choice] || q.a[2];
+    const e = a.eff;
+    if (e.rep) m.board.rep = clamp(m.board.rep + e.rep, 0, 100);
+    if (e.morale) allMood(e.morale);
+    if (e.sponsor) allSponsors(e.sponsor);
+    const parts = [e.rep ? `Ruf ${e.rep > 0 ? '+' : ''}${e.rep}` : '', e.morale ? `Fahrerstimmung ${e.morale > 0 ? '+' : ''}${e.morale}` : '', e.sponsor ? `Sponsoren ${e.sponsor > 0 ? '+' : ''}${e.sponsor}` : ''].filter(Boolean);
+    return `🎤 Medientag: ${a.t}${parts.length ? ` (${parts.join(', ')})` : ''}`;
+  }
+  if (ev.kind === 'board') {
+    markDone();
+    if (choice === 'budget') {
+      if (m.board.rep >= 55 && teamPos <= m.board.target + 1) {
+        const extra = { top: 10, mid: 8, back: 6 }[m.tier];
+        m.money += extra; (m.log || (m.log = [])).push({ what: 'Zusatzbudget des Vorstands', amount: extra });
+        return `Der Vorstand bewilligt ${money(extra)} Zusatzbudget.`;
+      }
+      m.board.rep = clamp(m.board.rep - 4, 0, 100);
+      return 'Zusatzbudget abgelehnt – erst müssen die Ergebnisse stimmen (Vertrauen −4).';
+    }
+    if (choice === 'lower') { m.board.target = Math.min(11, m.board.target + 1); m.board.rep = clamp(m.board.rep - 6, 0, 100); return `Saisonziel auf Platz ${m.board.target} gesenkt (Vertrauen −6).`; }
+    const ok = teamPos <= m.board.target;
+    m.board.rep = clamp(m.board.rep + (ok ? 4 : -2), 0, 100);
+    return ok ? 'Der Vorstand ist zufrieden und bestätigt das Ziel (Vertrauen +4).' : 'Ziel bestätigt – der Vorstand erwartet eine Steigerung (Vertrauen −2).';
+  }
+  if (ev.kind === 'contract') {
+    const d = m.drivers[ev.driver];
+    if (choice === 'later') {
+      const last = raceDate(season, SEASON_2026[SEASON_2026.length - 1]);
+      const nxt = addDays(ev.date, 28);
+      m.remind = m.remind || {};
+      if (nxt < last) { m.remind[ev.driver] = nxt; return `Erinnerung: Vertrag ${ev.driver} am ${fmtDate(nxt)}.`; }
+      markDone();
+      d.morale = clamp(d.morale - 10, 0, 100);
+      d.salary = r1(d.salary * 1.3);
+      return `${ev.driver} fühlt sich hingehalten – er bleibt nur zu deutlich höherem Gehalt (+30 %, Stimmung −10).`;
+    }
+    const years = choice === 'y2' ? 2 : 1;
+    const bonus = r1(d.salary * (years === 2 ? 0.4 : 0.25));
+    if (m.money < bonus) return 'Nicht genug Geld für die Unterschriftsprämie.';
+    markDone();
+    spend(m, bonus, `Vertragsverlängerung ${ev.driver} (+${years} J.)`, false);
+    d.contractEnd += years;
+    d.salary = r1(d.salary * (years === 2 ? 1.12 : 1.08));
+    d.morale = clamp(d.morale + (years === 2 ? 14 : 8), 0, 100);
+    return `${ev.driver} verlängert bis ${d.contractEnd} (Prämie ${money(bonus)}).`;
+  }
+  return null;
 }

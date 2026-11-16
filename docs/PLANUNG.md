@@ -313,3 +313,19 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   absagen. Hingehen: 0,3–0,8 Mio. $ (nach Teamstärke) und Zufriedenheit +10; Absagen: −22, Partner unter 10 kündigt.
   Zufriedenheit wird bei den Sponsoren angezeigt.
 - Eigener Auswahldialog `pwChoose` (mehrere Knöpfe); `pwConfirm` baut darauf auf.
+
+### v14 – Neue Termine, Kalender-Animation, Monatsansicht, Wetterübersicht, Training 30 Min.
+- **Neue Termine** im Kalender (Auswahl im Spiel-Dialog):
+  - Präsentation des neuen Autos (16. Februar): große Show (2,5 Mio., Ruf +5, Sponsoren zufriedener, Angebote +8 %),
+    schlicht (0,5 Mio.) oder nur online (Ruf −2).
+  - Medientag (Donnerstag vor jedem Rennen): Pressefrage mit drei Antworten – wirken auf Ruf, Fahrerstimmung, Sponsoren.
+  - Vorstandssitzung (nach Rennen 6, 12, 18): Zusatzbudget beantragen (nur bei Vertrauen ≥ 55 und Ziel in Reichweite,
+    sonst −4), Ziel bestätigen (+4 auf Kurs / −2), Ziel senken (−6).
+  - Vertragsende (7. September, wenn ein Fahrervertrag im laufenden Jahr endet): +1 Jahr, +2 Jahre oder später (Erinnerung
+    4 Wochen; zu spät → Gehalt +30 %, Stimmung −10).
+- **Kalender-Animation** beim Weiter-Knopf: Kalenderblatt blättert Tag für Tag (max. ~1,5 s) bis zum nächsten Termin und
+  hält dort mit dem Termin an.
+- **Kalender umschaltbar**: Liste oder Monatsansicht (Raster Mo–So, Symbole je Tag, heute markiert, Monate blättern).
+- **Wetterübersicht** (Wettersymbol in der Kopfleiste) statt Radar: aktuelle Bedingungen und Vorhersage je Session des
+  Wochenendes (trocken / Regen von Beginn an / Schauer ab Minute x bis y, Stärke). Aus denselben Wetterdaten wie die Simulation.
+- **Freies Training 30 Minuten** (alle Dauer-Stufen) für mehr Zeit bei der Setup-Suche.

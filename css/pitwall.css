@@ -377,3 +377,38 @@
 .pw-dlg-btns button { height: auto; min-height: 48px; }
 .pw-dlg-btns small { display: block; font-size: 10.5px; opacity: .8; font-weight: 600; }
 .pw-cale.sponsor { background: rgba(250,204,21,.07); border-color: rgba(250,204,21,.3); }
+
+/* v14: Kalender-Animation, Monatsansicht, Wetterübersicht */
+.pw-calanim { position: fixed; inset: 0; z-index: 95; display: flex; align-items: center; justify-content: center; background: rgba(8,10,15,.78); backdrop-filter: blur(5px); }
+.pw-calanim.hidden { display: none; }
+.pw-calpage { width: 230px; padding: 0 0 18px; border-radius: 22px; overflow: hidden; text-align: center; background: #f6f7fb; color: #12141b; box-shadow: 0 30px 70px -20px rgba(255,72,40,.6); }
+.pw-calpage .mo { padding: 12px; background: var(--pw-grad); color: #fff; font: 800 15px system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.pw-calpage .day { font: 900 92px/1 system-ui, -apple-system, sans-serif; margin-top: 14px; }
+.pw-calpage .wd { font: 600 15px system-ui, sans-serif; color: #5b6170; }
+.pw-calpage .bar { height: 5px; margin: 14px 22px 0; border-radius: 3px; background: #e2e4ea; overflow: hidden; }
+.pw-calpage .bar i { display: block; height: 100%; width: 0; background: var(--pw-grad); transition: width .05s linear; }
+.pw-calpage .pw-calev { min-height: 20px; margin: 12px 14px 0; font: 800 14px system-ui, sans-serif; color: #c8103c; }
+.pw-calanim.stop .pw-calpage { animation: pwStamp .35s ease-out; }
+@keyframes pwStamp { 0% { transform: scale(1.12); } 100% { transform: scale(1); } }
+.pw-calsw { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+.pw-calsw button { height: 38px; border-radius: 12px; background: rgba(255,255,255,.06); border: 1px solid var(--pw-line); color: #c9cdd8; font: 700 13px system-ui, sans-serif; }
+.pw-calsw button.on { background: var(--pw-grad); color: #fff; border-color: transparent; }
+.pw-calnav { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+.pw-calnav b { font: 800 16px system-ui, sans-serif; text-transform: capitalize; }
+.pw-calnav button { width: 40px; height: 36px; border-radius: 10px; background: rgba(255,255,255,.07); color: #fff; font-size: 20px; }
+.pw-cgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 8px; }
+.pw-cwd { text-align: center; font: 700 10.5px system-ui, sans-serif; color: #8a92a3; padding: 2px 0; }
+.pw-cd { min-height: 46px; padding: 3px; border-radius: 8px; background: rgba(255,255,255,.04); display: flex; flex-direction: column; }
+.pw-cd span { font: 700 11.5px system-ui, sans-serif; color: #c9cdd8; }
+.pw-cd i { font-style: normal; font-size: 13px; line-height: 1.1; word-break: break-all; }
+.pw-cd.empty { background: none; }
+.pw-cd.past { opacity: .45; }
+.pw-cd.race { background: rgba(255,72,40,.18); }
+.pw-cd.today { outline: 2px solid #ff6a3d; }
+.pw-cale.media, .pw-cale.board, .pw-cale.contract, .pw-cale.present { background: rgba(168,85,247,.08); border-color: rgba(168,85,247,.3); }
+.pw-wxrow { display: flex; gap: 10px; align-items: center; margin-top: 8px; padding: 10px; border-radius: 14px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+.pw-wxrow .ic { font-size: 26px; }
+.pw-wxrow b { display: block; font-size: 14px; color: #fff; }
+.pw-wxrow small { display: block; font-size: 12px; color: #aab0bf; line-height: 1.4; margin-top: 2px; }
+.pw-wxrow.now { border-color: #ff6a3d; }
+.pw-wxrow.past { opacity: .5; }

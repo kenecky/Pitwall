@@ -17,8 +17,8 @@ import { Feed, FEED_FILTERS, HELMET_ICON } from './ui/feed.js';
 import { renderTower } from './ui/tower.js';
 import { Sound } from './ui/sound.js';
 import { WeatherPanel } from './ui/weatherPanel.js';
-import { weatherLabel } from './sim/weather.js';
-import { distanceFor } from './sim/length.js';
+import { weatherLabel, createWeather } from './sim/weather.js';
+import { distanceFor, LENGTHS } from './sim/length.js';
 import { unservedSecs } from './control/stewards.js';
 import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, loadGame, clearGame } from './storage.js';
 import { serializeRace, restoreRace } from './sim/persist.js';
@@ -28,7 +28,7 @@ import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
   extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
   migrateManagement, preseasonTasks, readyForRace, signTitle, signPartner, dropPartner, hire, chooseConcept, startSeason, devFactor, staffCostPerRace,
-  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, resolveSponsorEvent, migrateEvents, SPONSOR_EVENTS, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
+  migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, resolveSponsorEvent, migrateEvents, SPONSOR_EVENTS, agendaDialog, resolveAgenda, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
 } from './team/management.js';
 import {
   PACE, PACE_ORDER, ERS, ERS_ORDER, STRATEGISTS, playerCars, setPace, setErs, callBox, cancelBox, tooLateForBox, tyreLife, adviceFor,
@@ -41,7 +41,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 13;
+export const VERSION = 14;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -125,7 +125,37 @@ function updateSound() {
 
 // ---------- Wetter-Fenster ----------
 const weatherPanel = new WeatherPanel({ root: $('wxScreen'), body: $('wxBody'), getRace: () => race });
-$('wxOpen').addEventListener('click', () => { if (race) weatherPanel.open(); });
+$('wxOpen').addEventListener('click', () => { if (race) showWeather(); });
+// Wetterübersicht des Wochenendes, aufgeteilt nach Sessions (Vorhersage aus denselben Wetterdaten wie die Simulation)
+function sessionWeather(i) {
+  const kind = wk.seq[i];
+  if (i === wk.idx && race) return { wx: race.weather, dur: race.isSession ? race.info.segments.reduce((s, x) => s + x.dur, 0) : race.laps * race.track.baseLap * 1.05 };
+  let dur;
+  if (SESSION_KINDS.has(kind)) {
+    const L = LENGTHS[settings.length] || LENGTHS.medium;
+    dur = kind === 'fp' ? L.fp : (kind === 'quali' ? L.quali : L.sq).reduce((a, b) => a + b, 0) + 2 * L.brk;
+  } else dur = distanceFor(track, kind, settings.length).laps * track.baseLap * 1.05;
+  return { wx: createWeather(wk.seed + i * 101, wk.season ? 'random' : settings.weatherMode, dur, track.def.rainChance ?? 0.38), dur };
+}
+function weatherText({ wx, dur }) {
+  if (!wx.showers.length) return { icon: '☀️', main: 'Trocken', sub: 'Kein Regen erwartet' };
+  const parts = wx.showers.map(sh => {
+    const strength = sh.peak > 0.75 ? 'starker Regen' : sh.peak > 0.5 ? 'Regen' : 'leichter Regen';
+    const a = Math.max(0, Math.round(sh.t0 / 60)), b = Math.min(Math.round(dur / 60), Math.round(sh.t1 / 60));
+    return sh.t0 <= 0 ? `${strength} von Beginn an bis ca. Minute ${b}` : `${strength} ab ca. Minute ${a} bis ${b}`;
+  });
+  const heavy = wx.showers.some(sh => sh.peak > 0.75);
+  return { icon: heavy ? '⛈' : wx.showers.some(sh => sh.t0 <= 0) ? '🌧' : '🌦', main: wx.mode === 'rain' ? 'Regen' : 'Wechselhaft', sub: parts.join(' · ') };
+}
+function showWeather() {
+  const wl = weatherLabel(race.weather);
+  $('wxBody').innerHTML = `<div class="pw-mcard"><b>${wl.icon} Jetzt: Strecke ${wl.track}</b><small>${race.weather.rain > 0.1 ? 'Es regnet gerade.' : 'Kein Regen im Moment.'}</small></div>`
+    + wk.seq.map((k, i) => {
+      const w = weatherText(sessionWeather(i));
+      return `<div class="pw-wxrow${i === wk.idx ? ' now' : ''}${i < wk.idx ? ' past' : ''}"><span class="ic">${w.icon}</span><div><b>${SESSION_NAME[k]}${i === wk.idx ? ' · jetzt' : ''}</b><small>${w.main} – ${w.sub}</small></div></div>`;
+    }).join('') + '<div class="pw-hint">Vorhersage des Wetterdienstes – Zeiten ab Beginn der Session.</div>';
+  $('wxScreen').classList.remove('hidden');
+}
 $('wxCloseBtn').addEventListener('click', () => weatherPanel.close());
 $('wxScreen').addEventListener('click', e => { if (e.target.id === 'wxScreen') weatherPanel.close(); });
 
@@ -515,11 +545,13 @@ function renderHQ() {
       <div class="pw-hqbtns">${Object.entries(DEV_SIZE).map(([s, z]) => `<button data-dev="${k}" data-size="${s}">${z.name}<small>${money(z.cost)} · ${projectWeeks(m, s)} Wochen · +${(z.gain * devFactor(m, k)).toFixed(1).replace('.', ',')}</small></button>`).join('')}</div></div>`).join('')
       + `<div class="pw-label">LAUFENDE PROJEKTE (max. ${maxProjects(bLvl(m, 'factory'))} – Entwicklungszentrum)</div>${m.projects.length ? m.projects.map(p => `<div class="pw-mcard"><b>${DEV[p.type].name}</b><small>${DEV_SIZE[p.size].name} · fertig am ${fmtDate(p.done, true)} (in ${weeksBetween(season.date, p.done).toString().replace('.', ',')} Wochen) · +${p.gain.toFixed(2).replace('.', ',')}</small></div>`).join('') : '<div class="pw-hint">Keine.</div>'}
       <div class="pw-hint">Die anderen Teams entwickeln auch – wer stehen bleibt, fällt zurück.</div>`;
+  } else if (hqTab === 'calendar' && ui.calView === 'month') {
+    h = calSwitch() + calMonthHtml();
   } else if (hqTab === 'calendar') {
     const ev = calendarEvents(season, SEASON_2026, trackLabel);
     const past = season.results.slice(-3).map(r => ({ date: raceDate(season, SEASON_2026[r.round - 1]), kind: 'done', text: `${trackLabel(r.track)} – ${DRIVERS.filter(d => d.team === season.teamId).map(d => `${d.id} ${finishOf(r.race, d.id) || '–'}`).join(', ')}` }));
     let month = '';
-    h = `<div class="pw-hint">Heute: <b>${fmtDate(season.date, true)}</b>. Mit dem Knopf auf der Hauptseite geht es zum nächsten Termin.</div><div class="pw-cal">`
+    h = calSwitch() + `<div class="pw-hint">Heute: <b>${fmtDate(season.date, true)}</b>. Mit dem Knopf auf der Hauptseite geht es zum nächsten Termin.</div><div class="pw-cal">`
       + [...past, ...ev].map(e => {
         const mo = new Date(`${e.date}T12:00:00Z`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
         const head = mo !== month ? `<div class="pw-calm">${mo}</div>` : '';
@@ -563,12 +595,73 @@ function renderHQ() {
   else if (savedGame && savedGame.mode === 'season') { go.textContent = 'Wochenende fortsetzen'; go.disabled = false; }
   else {
     const nx = nextEvent(season, SEASON_2026, trackLabel);
-    go.innerHTML = nx ? `Weiter · ${fmtDate(nx.date)} · ${nx.kind === 'race' ? `${esc(nx.text)}` : nx.kind === 'dev' ? 'Upgrade fertig' : nx.kind === 'sponsor' ? 'Sponsor-Termin' : 'Bau fertig'}` : 'Weiter';
+    go.innerHTML = nx ? `Weiter · ${fmtDate(nx.date)} · ${nx.kind === 'race' ? esc(nx.text) : EV_LABEL[nx.kind] || ''}` : 'Weiter';
     go.disabled = !nx;
   }
 }
 const trackLabel = id => TRACKS[id].grandPrix.replace('Großer Preis ', 'GP ');
-const calIcon = e => ({ race: '🏁', dev: '🔧', build: '🏗', done: '✓', sponsor: '🤝' }[e.kind] || '•');
+const calIcon = e => ({ race: '🏁', dev: '🔧', build: '🏗', done: '✓', sponsor: '🤝', media: '🎤', board: '🏛', contract: '📝', present: '🎉' }[e.kind] || '•');
+const EV_LABEL = { dev: 'Upgrade fertig', build: 'Bau fertig', sponsor: 'Sponsor-Termin', media: 'Medientag', board: 'Vorstandssitzung', contract: 'Vertragsende', present: 'Auto-Präsentation' };
+const teamPosNow = () => teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1;
+
+// Kalender-Animation: Tag für Tag bis zum nächsten Termin, dort kurz anhalten
+function animateCalendar(from, to, ev) {
+  return new Promise(resolve => {
+    const el = $('calAnim');
+    const days = Math.max(0, Math.round((new Date(`${to}T12:00:00Z`) - new Date(`${from}T12:00:00Z`)) / 86400000));
+    const steps = Math.min(days, 45);
+    const per = days ? Math.max(25, Math.min(70, 1500 / Math.max(1, steps))) : 0;
+    $('calAnimEv').innerHTML = '';
+    el.classList.remove('hidden', 'stop');
+    let i = 0;
+    const show = iso => {
+      const d = new Date(`${iso}T12:00:00Z`);
+      $('calAnimDay').textContent = d.getUTCDate();
+      $('calAnimWd').textContent = d.toLocaleDateString('de-DE', { weekday: 'long', timeZone: 'UTC' });
+      $('calAnimMo').textContent = d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      $('calAnimBar').style.width = `${steps ? (i / steps) * 100 : 100}%`;
+    };
+    const tick = () => {
+      i++;
+      const iso = addDays(from, Math.round(days * i / Math.max(1, steps)));
+      show(iso);
+      if (i < steps) { setTimeout(tick, per); return; }
+      el.classList.add('stop');
+      $('calAnimEv').innerHTML = `${calIcon(ev)} ${esc(ev.text)}`;
+      setTimeout(() => { el.classList.add('hidden'); resolve(); }, 900);
+    };
+    show(from);
+    if (!steps) { tick(); return; }
+    setTimeout(tick, per);
+  });
+}
+
+// Kalender: Umschalter Liste/Monat und Monatsansicht
+function calSwitch() {
+  return `<div class="pw-calsw"><button data-calview="list" class="${ui.calView !== 'month' ? 'on' : ''}">☰ Liste</button><button data-calview="month" class="${ui.calView === 'month' ? 'on' : ''}">▦ Monat</button></div>`;
+}
+function calMonthHtml() {
+  if (!ui.calMonth) ui.calMonth = season.date.slice(0, 7);
+  const [y, mo] = ui.calMonth.split('-').map(Number);
+  const first = new Date(Date.UTC(y, mo - 1, 1));
+  const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const lead = (first.getUTCDay() + 6) % 7;   // Montag zuerst
+  const evs = calendarEvents(season, SEASON_2026, trackLabel);
+  const past = season.results.map(r => ({ date: raceDate(season, SEASON_2026[r.round - 1]), kind: 'done', text: trackLabel(r.track) }));
+  const byDay = {};
+  for (const e of [...past, ...evs]) if (e.date.slice(0, 7) === ui.calMonth) (byDay[Number(e.date.slice(8))] ||= []).push(e);
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div class="pw-cd empty"></div>';
+  for (let d = 1; d <= days; d++) {
+    const iso = `${ui.calMonth}-${String(d).padStart(2, '0')}`;
+    const list = byDay[d] || [];
+    cells += `<div class="pw-cd${iso === season.date ? ' today' : ''}${iso < season.date ? ' past' : ''}${list.some(e => e.kind === 'race') ? ' race' : ''}"><span>${d}</span><i>${list.map(calIcon).join('')}</i></div>`;
+  }
+  const items = Object.entries(byDay).sort((a, b) => a[0] - b[0]).flatMap(([d, l]) => l.map(e => `<div class="pw-cale ${e.kind}"><span class="d">${d}.</span><span class="i">${calIcon(e)}</span><span class="t">${esc(e.text)}</span></div>`)).join('');
+  return `<div class="pw-calnav"><button data-calmove="-1">‹</button><b>${first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</b><button data-calmove="1">›</button></div>
+    <div class="pw-cgrid">${['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(x => `<div class="pw-cwd">${x}</div>`).join('')}${cells}</div>
+    <div class="pw-cal">${items || '<div class="pw-hint">Keine Termine in diesem Monat.</div>'}</div>`;
+}
 
 // Sponsoren-Verhandlung
 function negoHtml(n) {
@@ -643,6 +736,9 @@ $('hqGo').addEventListener('click', async () => {
   if (savedGame && savedGame.mode === 'season') { $('hqScreen').classList.add('hidden'); resumeGame(); return; }
   const nx = nextEvent(season, SEASON_2026, trackLabel);
   if (!nx) return;
+  if (m.phase === 'preseason' && nx.kind !== 'race') { /* Vorsaison-Termine sind erlaubt */ }
+  $('hqGo').disabled = true;
+  await animateCalendar(season.date, nx.date, nx);
   if (nx.kind === 'race') {
     if (m.phase === 'preseason') { const err = startSeason(season); if (err) { toast(err); return; } }
     const notes = advanceTo(season, addDays(nx.date, -2));   // Freitag des Rennwochenendes
@@ -664,6 +760,16 @@ $('hqGo').addEventListener('click', async () => {
     const choice = await pwChoose(`🤝 ${t.name} · ${esc(ev.sponsor)}`, `${t.hint}. ${t.driver ? 'Ein Fahrer muss hin – das kostet ihn etwas Stimmung.' : ''} Absagen verärgert den Sponsor.`,
       [...opts, { key: 'decline', label: 'Absagen', secondary: true }]);
     hqNotes.push(resolveSponsorEvent(season, ev.id, choice));
+  } else if (['media', 'board', 'contract', 'present'].includes(nx.kind)) {
+    const pos = teamPosNow();
+    const dlg = agendaDialog(season, nx, pos);
+    let res = null;
+    while (!res) {
+      const choice = await pwChoose(dlg.title, dlg.text, dlg.options);
+      res = resolveAgenda(season, nx, choice, pos);
+      if (res && /Nicht genug Geld/.test(res)) { toast(res); res = null; }
+    }
+    hqNotes.push(res);
   }
   saveSeason(season);
   hqTab = 'home';
@@ -677,6 +783,8 @@ $('hqBody').addEventListener('click', async e => {
   const m = season.mgmt;
   if (b.dataset.go) { hqTab = b.dataset.go; hqHire = null; renderHQ(); $('hqBody').scrollTop = 0; return; }
   if (b.dataset.stab2) { seasonTab = b.dataset.stab2; renderHQ(); return; }
+  if (b.dataset.calview) { ui.calView = b.dataset.calview; ui.calMonth = season.date.slice(0, 7); renderHQ(); return; }
+  if (b.dataset.calmove) { const [y, mo] = ui.calMonth.split('-').map(Number); const d = new Date(Date.UTC(y, mo - 1 + Number(b.dataset.calmove), 1)); ui.calMonth = d.toISOString().slice(0, 7); renderHQ(); return; }
   if (b.dataset.hire) { hqHire = hqHire === b.dataset.hire ? null : b.dataset.hire; renderHQ(); return; }
   if (b.dataset.hirepost) {
     const c = m.market.staff[b.dataset.hirepost][Number(b.dataset.hireidx)];
@@ -1063,7 +1171,6 @@ function refreshUi() {
     if (activeTab === 'timing') renderTiming($('timing'), race, { gapMode: settings.gapMode, selected: map.selected });
     if (settings.showTower) renderTower($('tower'), race, map.selected, settings.gapMode);
   }
-  if (weatherPanel.isOpen && weatherPanel.offset === 0) weatherPanel.drawRadar();
 }
 
 function updateStatus() {
