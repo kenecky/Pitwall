@@ -38,6 +38,9 @@ export function efficiency(car) {
 // Einsatz-Stufe des Fahrers je nach Ladestand
 function useLevel(car) {
   const e = car.energy;
+  // Pit Wall: Energie-Modus des Teamchefs (nur eigene Autos)
+  if (car.ersMode === 'harvest') return e > 0.1 ? 0.4 : 0.15;
+  if (car.ersMode === 'overtake') return e > 0.12 ? ATTACK : 0.15;
   const attack = car.pass && !car.pass.slow && !car.pass.blue;
   if (attack && e > 0.12) return ATTACK;
   if (e > 0.6) return 1;
@@ -56,7 +59,7 @@ export function energyStep(race, car, dt, neutral) {
     return 1;
   }
   if (!isStraight(race.track, car.d)) {
-    car.energy = Math.min(1, car.energy + E.harvest * efficiency(car) * dt);
+    car.energy = Math.min(1, car.energy + E.harvest * efficiency(car) * (car.ersMode === 'harvest' ? 1.3 : 1) * dt);
     car.deploy = 0;
     return 1;
   }

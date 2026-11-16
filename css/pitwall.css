@@ -1,7 +1,7 @@
 /* Pit Wall: Ergänzungen zum übernommenen Race-Control-Stil (style.css) */
 
 /* Unterer Bereich wieder sichtbar: Pit Wall / Zeiten / Log */
-#app .tabs { display: grid; grid-template-columns: repeat(3, 1fr); }
+#app .tabs { display: grid; grid-template-columns: repeat(4, 1fr); }
 #app .panels { display: block; }
 #app .map-wrap { flex: none; height: 36dvh; min-height: 190px; }
 .panel { overflow-y: auto; }
@@ -89,3 +89,54 @@
 .row.mine { background: rgba(250,204,21,.10); }
 /* Pause-Knopf in der Kopfleiste (in Race Control ausgeblendet) */
 .status #pauseBtn { display: inline-flex !important; align-items: center; justify-content: center; }
+
+/* ---------- v2 ---------- */
+/* Tempo-Menü beim Gedrückthalten: nach unten wischen */
+.pw-speedmenu { position: fixed; z-index: 60; display: grid; gap: 4px; padding: 6px; border-radius: 8px; background: #1b2029; border: 2px solid #facc15;
+  box-shadow: 0 12px 30px rgba(0,0,0,.6); min-width: 86px; }
+.pw-speedmenu button { height: 42px; border-radius: 6px; background: #262c37; border: 2px solid #0c0e12; font: 800 15px var(--mono); color: #e6e9ef; }
+.pw-speedmenu button.cur { color: #facc15; }
+.pw-speedmenu button.hot { background: #facc15; color: #111; }
+
+/* Tempo-Knöpfe mit Reifen-Runden */
+.pw-seg button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; height: 40px; }
+.pw-seg button small { font: 600 9.5px var(--mono); opacity: .85; letter-spacing: 0; }
+.pw-seg.ers { grid-template-columns: repeat(3, 1fr); }
+.pw-seg.ers button { height: 32px; }
+.pw-seg.ers button.on[data-ers="overtake"] { background: #c084fc; }
+.pw-seg.ers button.on[data-ers="harvest"] { background: #38bdf8; }
+.pw-hold { margin-top: 4px; font: 600 10.5px var(--mono); color: #c3cad6; }
+.pw-hold b { color: #fff; }
+.pw-ers { display: flex; align-items: center; gap: 8px; }
+.pw-ers .pw-life { flex: 1; }
+.pw-plan { display: flex; align-items: center; gap: 4px; margin-top: 4px; font: 700 11.5px var(--mono); }
+.pw-plan span { flex: 1; min-width: 0; color: #e6e9ef; }
+.pw-plan button { height: 30px; min-width: 38px; border-radius: 5px; background: #222833; border: 2px solid #0c0e12; font: 800 11px var(--mono); color: #c3cad6; }
+.pw-rejoin { margin-top: 6px; font: 600 11px var(--mono); color: #9fb0c6; }
+.pw-rejoin.free b { color: #4ade80; } .pw-rejoin.traffic b { color: #fb923c; }
+.pw-circbtn { position: absolute; right: 6px; bottom: 6px; width: 30px; height: 30px; border-radius: 50%; background: #222833; border: 2px solid #0c0e12; color: #facc15; font-size: 15px; }
+.pw-orders { border-radius: 6px; background: #12161d; border: 2px solid #0c0e12; padding: 8px; }
+.pw-orders .pw-seg { grid-template-columns: repeat(3, 1fr); }
+.pw-orders .pw-seg button { height: 34px; }
+
+/* Circle of Doom */
+.pw-circle { padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.pw-chips { display: flex; gap: 6px; }
+.pw-chips button { padding: 6px 12px; border-radius: 14px; background: #222833; border: 2px solid #0c0e12; font: 800 12px var(--mono); color: #c3cad6; }
+.pw-chips button.on { background: #facc15; color: #111; }
+#circle { width: min(100%, 340px); aspect-ratio: 1; display: block; }
+.pw-cinfo { width: 100%; font: 600 11.5px var(--mono); color: #c3cad6; line-height: 1.5; }
+.pw-cinfo b { color: #fff; }
+
+/* Strategie vor dem Start */
+.pw-strat { margin-bottom: 14px; }
+.pw-strat h3 { margin: 0 0 4px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.pw-strat h3 i { width: 5px; height: 18px; border-radius: 2px; }
+.pw-strat h3 small { color: var(--muted); font: 600 11px var(--mono); }
+.pw-opt { display: block; width: 100%; text-align: left; margin-top: 6px; padding: 9px 10px; border-radius: 6px; background: #1b2029; border: 2px solid #0c0e12; color: #c3cad6; }
+.pw-opt b { color: #fff; font: 800 13px var(--mono); }
+.pw-opt div { margin-top: 3px; font-size: 12px; line-height: 1.4; }
+.pw-opt.on { border-color: #facc15; box-shadow: 0 0 10px rgba(250,204,21,.3); }
+.pw-opt .tyres { display: flex; gap: 4px; margin-top: 5px; align-items: center; font: 600 10.5px var(--mono); }
+.pw-opt .tyres .pw-tyre { width: 20px; height: 20px; font-size: 9.5px; border-width: 2.5px; }
+#speedBtn { touch-action: none; -webkit-touch-callout: none; }

@@ -7,7 +7,7 @@ import { buildTrack } from '../js/sim/trackModel.js';
 import { Race } from '../js/sim/race.js';
 import { distanceFor } from '../js/sim/length.js';
 import { autoDirect } from '../js/control/autoDirector.js';
-import { callBox, setPace, adviceFor, playerCars } from '../js/team/pitwall.js';
+import { setPace, playerCars, strategyOptions, applyStrategy, teamStep, rejoin, swapCars, lapsLeftOnTyres, tyreLife } from '../js/team/pitwall.js';
 
 const N = +(process.argv[2] || 6);
 const only = process.argv[3];
@@ -20,6 +20,9 @@ for (let k = 0; k < N; k++) {
   const team = TEAMS[k % TEAMS.length].id;
   const weather = ['dry', 'random', 'changeable', 'rain'][k % 4];
   const race = new Race({ track, teams: TEAMS, drivers: DRIVERS, seed: 1000 + k, weather, laps, fullLaps: full, playerTeam: team });
+  const strat = [];
+  for (const c of playerCars(race)) { const o = strategyOptions(race, c); applyStrategy(race, c, o[k % 2]); strat.push(`${c.id} ${o[k % 2].key}: ${o[k % 2].name}`); }
+  if (k === 0) console.log('   ', strat.join(' | '));
   race.start('standing');
   let steps = 0;
   const t0 = Date.now();
@@ -27,19 +30,20 @@ for (let k = 0; k < N; k++) {
   while (race.phase !== 'finished' && steps < 400000) {
     race.step();
     autoDirect(race);
+    teamStep(race);
     steps++;
     if (steps % 20 === 0 && race.phase === 'running') {
       for (const c of mine) {
         if (c.retired || c.finished || c.boxCall || c.inPit) continue;
-        const a = adviceFor(race, c);
-        if (a && c.lap + 1 >= a.lap) callBox(race, c, a.compound);
         if (c.lap === 5 && c.paceMode === 'normal' && c === mine[0]) setPace(race, c, 'push');
+        if (k === 0 && c.lap === 8 && !race.swapTried) { race.swapTried = 1; console.log('    Tausch:', JSON.stringify(swapCars(race)), 'Rejoin', c.id, JSON.stringify((({ loss, pos, free }) => ({ loss: +loss.toFixed(1), pos, free }))(rejoin(race, c))), 'Life', tyreLife(race, c), 'Rd', lapsLeftOnTyres(race, c).toFixed(1)); }
       }
     }
   }
   for (let i = 0; i < 200; i++) { race.step(); autoDirect(race); }
   const st = race.standings();
   const ok = race.phase === 'finished';
+  for (const e of race.events) if (/^Teamorder/.test(e.text)) console.log('   ', e.text);
   if (!ok) fails++;
   const ev = race.events;
   const cnt = ty => ev.filter(e => e.type === ty).length;

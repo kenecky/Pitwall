@@ -433,7 +433,7 @@ export function arriveInQueue(race, car) {
   }
   const from = car.compound;
   car.compound = choice;
-  car.tyreAge = 0;
+  car.tyreAge = 0; car.tyreWear = 0;
   used.add(choice);
   // Restliche Stopps streichen, wenn die neuen Reifen bis ins Ziel halten
   if (used.size >= 2 && remaining <= COMPOUNDS[choice].cliff + 4) car.planIdx = car.plan.length;

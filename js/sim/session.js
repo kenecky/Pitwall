@@ -269,7 +269,7 @@ export class Session extends Race {
     const w = this.weather.wetness;
     car.compound = w > 0.15 ? bestCompound(w, 20) : run.compound;
     car.fuel = run.fuel;
-    car.tyreAge = 0;
+    car.tyreAge = 0; car.tyreWear = 0;
     car.inGarage = false;
     car.stopTimer = 0;
     car.stoppedThisVisit = true;

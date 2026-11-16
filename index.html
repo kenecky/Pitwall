@@ -71,12 +71,20 @@
 
     <nav class="tabs">
       <button class="tab active" data-tab="wall">PIT WALL</button>
+      <button class="tab" data-tab="circle">CIRCLE</button>
       <button class="tab" data-tab="timing">ZEITEN</button>
       <button class="tab" data-tab="feed">LOG <span id="feedBadge" class="badge-count hidden">0</span></button>
     </nav>
 
     <main class="panels">
       <div id="panel-wall" class="panel active"><div id="wall" class="pw-wall"></div></div>
+      <div id="panel-circle" class="panel">
+        <div class="pw-circle">
+          <div id="circleCars" class="pw-chips"></div>
+          <canvas id="circle"></canvas>
+          <div id="circleInfo" class="pw-cinfo"></div>
+        </div>
+      </div>
       <div id="panel-timing" class="panel">
         <div class="timing-head">
           <span class="pos">P</span><span class="teambar"></span><span class="code">Fahrer</span><span class="delta"></span><span class="rst"></span>
@@ -89,6 +97,19 @@
         <ul id="feed" class="feed" data-filter="all"></ul>
       </div>
     </main>
+  </div>
+
+ <div id="speedMenu" class="pw-speedmenu hidden" role="menu"></div>
+
+  <!-- Rennstrategie vor dem Start (nach dem Intro) -->
+  <div id="stratScreen" class="overlay hidden">
+    <div class="sheet">
+      <h2 class="sheet-title">Rennstrategie</h2>
+      <div id="stratBody"></div>
+      <div class="sheet-actions">
+        <button id="stratGo" class="primary-btn">Strategie bestätigen · Start</button>
+      </div>
+    </div>
   </div>
 
   <div id="introScreen" class="intro-screen hidden"><canvas id="introCanvas"></canvas></div>
@@ -140,7 +161,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 1</div>
+      <div class="app-version">Version 2</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)

@@ -38,8 +38,8 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 
 ## 3. Meilensteine
 - [x] **M1 – Grundgerüst und Einzelrennen** (v1)
-- [ ] **M2 – Renn-Strategie komplett**: Energie-/Overtake-Modus, Teamorder (halten/tauschen), Undercut/Overcut-Hinweise
-      mit Boxenstopp-Verlust, SC/VSC-Fenster, Wetter, Doppelstopp-Warnung
+- [x] **M2 – Renn-Strategie komplett** (v2): Strategiewahl A/B vor dem Start, Energie-/Overtake-Modus, Teamorder,
+      Circle of Doom mit Rejoin-Vorhersage, Undercut/Overcut-Hinweise mit Boxenverlust, SC/VSC-Fenster, Doppelstopp-Warnung
 - [ ] **M3 – Teamfunk**: Fahrer melden sich (Reifen, Wetter, Schäden, Beschwerden), Antwort per Schnellauswahl, Stimmung
 - [ ] **M4 – Rennwochenende**: Setup im Training (Flügel, Abstimmung, Rückmeldung), Quali-Runs timen (Verkehr, freie Runde),
       Reifen-Kontingent, Sprint
@@ -78,3 +78,28 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Tabs Pit Wall / Zeiten / Log; Tower mit eigenen Autos markiert; Wetter-Radar; Ergebnis mit Punkten des Teams
 - Tablet quer/Desktop: Karte links, Pit Wall rechts
 - Test: 14 Rennen headless ohne Fehler, keine offenen Fälle; rote Flaggen fast nur bei Regen/Monaco
+
+### v2 – M2 Renn-Strategie
+- **Tempo-Knopf**: kurz tippen = nächste Stufe; gedrückt halten öffnet die Auswahl 1×–32×, nach unten wischen, loslassen = wählen
+- **Rennstrategie nach dem Intro**: Rennstratege des Teams (fiktive Namen, `STRATEGISTS`) rechnet mit dem Reifenmodell der
+  Simulation alle 1- und 2-Stopp-Kombinationen (Stintlängen optimiert, Klippe wird gemieden, Boxenverlust der Strecke)
+  und schlägt je Fahrer **A** (schnellste) und **B** (andere Stoppzahl oder andere Startmischung) vor. Bei nassem Start:
+  Inter/Regenreifen mit Wechsel nach Wetter. Gewählte Strategie wird **automatisch gefahren**.
+- **Plan an der Boxenmauer**: nächster Stopp mit −1/+1/✕ oder „+ Stopp“; Mischung tippen ändert den nächsten Stopp;
+  BOX ersetzt einen Stopp, der ohnehin in ≤ 8 Runden käme, sonst zusätzlicher Stopp; ABBRECHEN schiebt einen fälligen Stopp
+  um eine Runde. Günstige Stopps unter SC/VSC entscheidet nur der Teamchef.
+- **Reifenverschleiß live**: wächst je gefahrenem Meter (Tempo-Faktor; unter SC/VSC 0,35, in der Box 0,1) – die Prozentanzeige
+  sinkt laufend, die Rundenzeit folgt direkt.
+- **Reifen-Runden**: unter jedem Tempo-Knopf, wie viele Runden die Reifen bis zur Klippe halten; Zeile „bis Ziel“.
+- **Energie-Modus**: Laden (wenig Einsatz, +30 % Rückgewinnung) · Normal · Overtake (voller Einsatz bis Akku leer);
+  Akku-Anzeige je Fahrer.
+- **Teamorder**: Frei fahren · Position halten (keine Angriffe untereinander) · Tauschen (vorderes Auto geht vom Gas und
+  lässt vorbei, nur bis 3 s Abstand).
+- **Circle of Doom** (Tab CIRCLE, ◎ am Fahrer): Kreis = eine Runde in Zeit (bei Renntempo), alle Autos nach ihrer
+  Zeitposition, gestrichelter Geist = Rauskommen nach einem Stopp jetzt (Position, Fahrer davor/dahinter, ±1,5-s-Fenster
+  grün/orange); Geist auch auf der Karte. Boxenverlust = Boxengasse statt Strecke + Standzeit (Crew) + 1,5 s Bremsen/
+  Beschleunigen, unter SC/VSC kleiner (Feld fährt ~60 %). Mit der Simulation abgeglichen (Monza, Monaco, Silverstone ±2 s).
+- **Hinweise**: Rejoin-Zeile je Fahrer, Undercut (Zeitgewinn frischer Reifen pro Runde, Verkehr), Overcut (Gegner vor uns
+  in der Box), SC/VSC-Verlust, Reifen halten nicht bis zum geplanten Stopp, Doppelstopp
+- Recherche „Circle of Doom“: kaum öffentliche Quellen; Prinzip laut Teams: Boxenverlust nutzen, um die Position relativ
+  zum Feld beim Rauskommen zu berechnen und freie Luft zu finden (Aston-Martin-Strategieinterview, Motorsport.com)

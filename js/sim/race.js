@@ -336,7 +336,7 @@ export class Race {
     const C = COMPOUNDS[car.compound];
     const w = this.weather.wetness;
     // Verschleiß (bei kurzer Distanz schneller); eigene Autos: abhängig von der Tempo-Anweisung
-    const age = (car.player && car.tyreAge > 0 ? car.tyreWear : car.tyreAge) * this.wear;
+    const age = (car.player ? car.tyreWear : car.tyreAge) * this.wear;
     let deg = age * C.deg * (C.wet && w < 0.3 ? 3 : 1);          // Regenreifen überhitzen auf trockener Strecke
     if (age > C.cliff) deg += (age - C.cliff) * 0.22;
     const dmg = car.damage === 'wing' ? 1.2 : 0;
@@ -347,7 +347,8 @@ export class Race {
     let warm = C.warm && fresh < tr.L * 1.1 ? C.warm * (1 - fresh / (tr.L * 1.1)) : 0;
     // danach 2–3 Runden Spitzen-Grip (darum funktioniert der Undercut)
     if (C.warm && fresh >= tr.L * 1.1 && fresh < tr.L * 3.5) warm -= 0.6 * (1 - (fresh - tr.L * 1.1) / (tr.L * 2.4));
-    const pace = car.player ? paceOf(car).dt : 0;
+    let pace = car.player ? paceOf(car).dt : 0;
+    if (car.letBy) pace += 1.2;   // Teamorder: vom Gas gehen, damit der Teamkollege aufschließt
     return tr.baseLap + car.basePenalty + (C.wet ? 0 : C.offset) + wet + deg + 2.2 * (1 - progress) + car.lapNoise + dmg + careful + warm + pace;
   }
 
@@ -449,6 +450,8 @@ export class Race {
       const prev = car.d;
       car.d += car.move;
       if (car.finished) { this.coolDown(car, prev); continue; }
+      // Pit Wall: Reifenverschleiß live (je gefahrenem Meter); unter Neutralisierung und in der Box kaum
+      if (car.player && car.move > 0) car.tyreWear += car.move / tr.L * (car.inPit ? 0.1 : this.neutral ? 0.35 : paceOf(car).wear);
       this.handleCrossings(car, prev);
       checkPendingIncident(this, car, prev);
       if (car.limp && !car.retired) updateLimp(this, car);
@@ -585,7 +588,8 @@ export class Race {
           continue;
         }
         const zone = tr.zones.find(z => inRange(tr, B.d, z.start, z.end));
-        if (zone && !banned) {
+        const hold = B.player && A.player && this.teamOrder === 'hold';   // Teamorder: Positionen halten
+        if (zone && !banned && !hold) {
           const key = `${B.lap}:${zone.corner}`;
           const zoneName = zone.corner;
           if (!B.tried.has(key)) {
@@ -701,7 +705,8 @@ export class Race {
 
   // Hooks für Sessions (Training/Qualifying)
   programFactor() { return 1; }
-  yieldsTo() { return false; }
+  // Pit Wall: Teamorder „Plätze tauschen“ – das vordere Auto lässt den Teamkollegen vorbei
+  yieldsTo(B, A) { return Boolean(A.player && A.letBy === B.id && !passingBanned(this, B)); }
   get isSession() { return false; }
 
   startPass(B, A, { blue = false, zone = null, slow = false, violation = false, giveback = false }) {
@@ -725,6 +730,7 @@ export class Race {
     if (!car.inPit && this.phase === 'running' && crossed(tr, prev, car.d, tr.pit.entry)) {
       const next = car.plan[car.planIdx];
       let decision = this.isSession ? this.sessionPitDecision(car) : pitDecision(this, car, next);
+      if (car.player && decision === 'cheap') decision = null;   // Pit Wall: günstigen Stopp entscheidet der Teamchef
       // Boxengasse geschlossen: nur Rot führt hinein
       if (this.svc && this.svc.pitClosed && decision !== 'red' && !rollPitClosedEntry(this, car)) { car.pitWanted = true; decision = 'closed'; }
       if (decision === 'garage') {
@@ -861,7 +867,6 @@ export class Race {
       const lapTime = tLine - car.lapStart;
       car.lapStart = tLine;
       car.lastLap = lapTime;
-      car.tyreWear = (car.tyreAge === 0 ? 0 : car.tyreWear || 0) + (car.player ? paceOf(car).wear : 1);
       car.tyreAge++;
       car.lapNoise = this.newLapNoise(car);
       if (this.isSession) { this.onSessionLap(car, lapTime, prev); return; }
@@ -943,7 +948,7 @@ export class Race {
       car.weatherStop = null;
       car.damage = null;
       car.damageStop = false;
-      car.tyreAge = 0;
+      car.tyreAge = 0; car.tyreWear = 0;
       car.freshD = car.d;
       car.stops++;
       car.usedCompounds.add(car.compound);
@@ -964,7 +969,7 @@ export class Race {
       car.damage = null;
       const nx = car.plan[car.planIdx];
       if (!nx || (nx.lap - car.lap) * this.wear > 8) {
-        car.tyreAge = 0;
+        car.tyreAge = 0; car.tyreWear = 0;
         car.freshD = car.d;
         car.stops++;
         this.emit('pit', `Reparaturstopp ${car.id}: ${repaired} (${car.lastStopTime.toFixed(1).replace('.', ',')} s)`, { cars: [car.id] });
@@ -985,7 +990,7 @@ export class Race {
     car.coverFrom = null;
     car.cheapStop = false;
     car.boxCall = null;
-    car.tyreAge = 0;
+    car.tyreAge = 0; car.tyreWear = 0;
     car.freshD = car.d;
     car.stops++;
     rollUnsafeRelease(this, car);
