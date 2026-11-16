@@ -23,6 +23,7 @@ import { unservedSecs } from './control/stewards.js';
 import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, loadGame, clearGame } from './storage.js';
 import { serializeRace, restoreRace } from './sim/persist.js';
 import { newSeason, currentEntry, seasonOver, weekendParts, recordWeekend, driverStandings, teamStandings, finishOf, SPRINT_TRACKS } from './team/season.js';
+import { initCareer, careerAfterWeekend, careerSeasonEnd, acceptOffer, startNewSeason } from './team/career.js';
 import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, setStaff, buyPart, newPowerUnit,
   extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, DEV, DEV_SIZE, STAFF, PARTS,
@@ -38,7 +39,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 7;
+export const VERSION = 8;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -347,6 +348,7 @@ function renderResume() {
 let seasonTab = 'drivers';
 function showSeason(notes = []) {
   if (!season) return;
+  $('seasonScreen').querySelector('.sheet-title').textContent = `🏆 Saison ${season.year}`;
   $('seasonNotes').innerHTML = notes.map(n => `<div class="pw-sum">${n}</div>`).join('');
   renderSeasonTab();
   $('seasonScreen').classList.remove('hidden');
@@ -389,7 +391,24 @@ function setMode(mode) {
 // ---------- Teamzentrale (Saison): Finanzen, Entwicklung, Team, Fahrer, Partner ----------
 let hqTab = 'report';
 let hqNotes = [];
-const HQ_TABS = [['report', 'Bericht'], ['money', 'Finanzen'], ['dev', 'Entwicklung'], ['team', 'Team'], ['drivers', 'Fahrer'], ['partner', 'Partner']];
+const HQ_TABS = [['report', 'Bericht'], ['career', 'Karriere'], ['money', 'Finanzen'], ['dev', 'Entwicklung'], ['team', 'Team'], ['drivers', 'Fahrer'], ['partner', 'Partner']];
+
+// Karriere: Ruf als Teamchef, Angebote, Verlauf, neue Saison
+function careerHtml() {
+  const c = initCareer(season);
+  const over = seasonOver(season);
+  const tn = id => esc(TEAM_BY_ID[id].name);
+  let h = `${hqBar('RUF ALS TEAMCHEF', c.rep, 100, c.rep >= 60 ? '#4ade80' : c.rep >= 35 ? '#facc15' : '#f87171')}
+    <div class="pw-hint">Der Ruf steigt mit Ergebnissen über den Erwartungen und erreichten Saisonzielen. Stärkere Teams melden sich erst ab einem hohen Ruf (Top-Team ~85).</div>`;
+  if (c.fired) h += '<div class="pw-sum neg"><b>Du bist ohne Team.</b> Nimm ein Angebot an, um weiterzumachen.</div>';
+  h += '<div class="pw-label">ANGEBOTE</div>';
+  h += c.offers.length ? c.offers.map(o => `<div class="pw-hqcard"><div><b>${tn(o.teamId)}</b> ${esc(o.why)}<small>${o.next ? `Ab der Saison ${o.year + 1}` : 'Wechsel ab dem nächsten Rennwochenende'} · Ziel: Platz ${o.target} · Gültig ${o.next ? 'bis zum Saisonstart' : `bis nach Rennen ${o.until}`}</small></div>
+      <div class="pw-hqbtns"><button data-offer="${o.teamId}">Annehmen</button></div></div>`).join('')
+    : '<div class="pw-hint">Keine Angebote. Angebote kommen nach dem 8. und 16. Rennen sowie zum Saisonende – wenn der Ruf passt.</div>';
+  if (over && !c.fired) h += `<div class="pw-label">NÄCHSTE SAISON</div><div class="pw-hqbtns"><button data-newseason="1">Saison ${season.year + 1} mit ${tn(season.teamId)}</button></div>`;
+  h += `<div class="pw-label">VERLAUF</div>${c.history.length ? `<table class="pw-res"><tbody>${c.history.map(x => `<tr><td>${x.year}</td><td>${tn(x.team)}</td><td>${x.end ? `${x.end} nach Rennen ${x.round}` : `Teamwertung P${x.pos} (Ziel P${x.target}) · ${x.pts} Pkt.`}</td></tr>`).join('')}</tbody></table>` : '<div class="pw-hint">Erste Saison.</div>'}`;
+  return h;
+}
 function showHQ(notes = null) {
   if (!season || !season.mgmt) return;
   if (notes) hqNotes = notes;
@@ -409,6 +428,8 @@ function renderHQ() {
     const rep = m.report;
     h = (hqNotes.length ? hqNotes.map(n => `<div class="pw-sum">${n}</div>`).join('') : '<div class="pw-sum">Noch kein Bericht – nach dem ersten Wochenende steht hier, was passiert ist.</div>')
       + (rep && rep.log ? `<div class="pw-label">BUCHUNGEN NACH RENNEN ${rep.round}</div><table class="pw-res"><tbody>${rep.log.map(l => `<tr><td>${esc(l.what)}</td><td style="text-align:right" class="${l.amount < 0 ? 'neg' : 'pos'}">${l.amount > 0 ? '+' : ''}${money(l.amount)}</td></tr>`).join('')}</tbody></table>` : '');
+  } else if (hqTab === 'career') {
+    h = careerHtml();
   } else if (hqTab === 'money') {
     h = `${hqBar('KONTO', Math.max(0, m.money), 100, m.money < 10 ? '#f87171' : '#4ade80', money(m.money))}
       ${hqBar('BUDGETOBERGRENZE', m.spent, CAP, m.spent > CAP * 0.9 ? '#f87171' : '#facc15', `${money(m.spent)} / ${money(CAP)}`)}
@@ -460,6 +481,17 @@ $('hqBody').addEventListener('click', e => {
   else if (b.dataset.pu) { if (!confirm('Neue Antriebseinheit einbauen?')) return; err = newPowerUnit(season); }
   else if (b.dataset.talk) err = talkTo(season, b.dataset.talk, b.dataset.k);
   else if (b.dataset.extend) err = extendContract(season, b.dataset.extend);
+  else if (b.dataset.offer || b.dataset.newseason) {
+    if (savedGame && savedGame.mode === 'season') { toast('Erst das laufende Wochenende zu Ende fahren (oder verwerfen).', 3500); return; }
+    const id = b.dataset.offer || season.teamId;
+    const name = TEAM_BY_ID[id].name;
+    if (!confirm(b.dataset.offer ? `Angebot von ${name} annehmen?` : `Neue Saison ${season.year + 1} mit ${name} starten?`)) return;
+    season = b.dataset.offer ? acceptOffer(season, TEAMS, DRIVERS, id) : startNewSeason(season, TEAMS, DRIVERS);
+    saveSeason(season);
+    hqNotes = [`Willkommen bei <b>${esc(name)}</b>! Saison ${season.year}, Ziel: Platz ${season.mgmt.board.target}.`];
+    hqTab = 'report';
+    newRace();
+  }
   if (err) toast(err, 3000);
   saveSeason(season);
   renderHQ();
@@ -525,15 +557,16 @@ function renderStart() {
   }
   for (const b of list.children) b.classList.toggle('on', b.dataset.track === settings.trackId);
   const def = track.def;
-  $('evRound').textContent = entry ? `Saison ${season.year} · Rennen ${entry.round}/${SEASON_2026.length} · ${new Date(entry.date).toLocaleDateString('de-DE')}`
+  $('evRound').textContent = entry ? `Saison ${season.year} · Rennen ${entry.round}/${SEASON_2026.length} · ${new Date(`${season.year}${entry.date.slice(4)}`).toLocaleDateString('de-DE')}`
     : running ? `Saison ${season.year} beendet` : sea ? 'Neue Saison – Team wählen' : '';
   $('gpInfo').innerHTML = `<b>${def.grandPrix.replace('Großer Preis ', 'GP ')}</b><div><span>${distanceFor(track, 'race', settings.length).laps}</span> Runden</div><div><span>${(def.lengthM / 1000).toFixed(3).replace('.', ',')}</span> km</div>`;
   renderSegs();
   const parts = settings.parts || ['fp', 'quali'];
   for (const cb of $('sessionChecks').querySelectorAll('input')) cb.checked = cb.value === 'race' || parts.includes(cb.value);
   $('weekendSteps').innerHTML = wk.seq.map((k, i) => `<span class="wstep${i < wk.idx ? ' done' : i === wk.idx ? ' now' : ''}">${SESSION_SHORT[k]}</span>`).join('<span class="wsep">›</span>');
-  $('startBtn').textContent = sea && !season ? 'Saison starten' : running && !entry ? 'Saison beendet' : wk.seq.length > 1 ? `Wochenende starten · ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
-  $('startBtn').disabled = Boolean(running && !entry);
+  const fired = Boolean(running && season.career && season.career.fired);
+  $('startBtn').textContent = sea && !season ? 'Saison starten' : fired ? 'Ohne Team – Angebote ansehen' : running && !entry ? `Saison beendet – weiter zu ${season.year + 1}` : wk.seq.length > 1 ? `Wochenende starten · ${SESSION_NAME[wk.seq[0]]}` : 'Rennen starten';
+  $('startBtn').disabled = false;
   if (running) $('teamInfo').insertAdjacentHTML('afterbegin', `<div class="pw-sum">Saison mit <b>${esc(t.name)}</b>${season.results.length ? ` · Teamwertung P${teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1} · ${season.teamPts[season.teamId] || 0} Punkte` : ' · noch kein Rennen gefahren'}</div>`);
   const wx = race.weather;
   $('forecast').textContent = !wx.showers.length ? '☀️ Vorhersage: trocken'
@@ -1462,7 +1495,12 @@ $('newRaceBtn').addEventListener('click', () => {
       const last = season.results[season.results.length - 1];
       const notes = afterWeekend(season, TEAMS, DRIVERS, last, wk.used || {}, wk.moods || {});
       const after = teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1;
-      if (seasonOver(season)) notes.push(...seasonEnd(season, after));
+      notes.push(...careerAfterWeekend(season, TEAMS, season.mgmt.report.r.pts, expectedPoints(season.mgmt.board.target)));
+      if (seasonOver(season)) {
+        notes.push(...seasonEnd(season, after));
+        const final = teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1;
+        notes.push(...careerSeasonEnd(season, TEAMS, final));
+      }
       saveSeason(season);
       newRace();
       hqTab = 'report';
@@ -1563,6 +1601,8 @@ $('pauseBtn').addEventListener('click', () => {
 });
 $('startBtn').addEventListener('click', () => {
   sound.unlock();
+  // Saison vorbei oder entlassen: Karriere in der Teamzentrale
+  if (isSeason() && season && (seasonOver(season) || (season.career && season.career.fired))) { hqTab = 'career'; showHQ(); return; }
   if (savedGame && !confirm('Es gibt ein gespeichertes Wochenende. Neu beginnen und den Spielstand überschreiben?')) return;
   if (isSeason() && !season) {
     season = newSeason(settings.teamId);

@@ -46,7 +46,7 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - [x] **M5 – Saison** (v6): Kalender, Speichern/Fortsetzen, Team- und Fahrerwertung
 - [x] **M6 – Management** (v7): Budget mit Obergrenze, Entwicklung Aero/Motor/Zuverlässigkeit, Ersatzteile und Schäden,
       Personal (Boxencrew, Ingenieure), Fahrerverträge und Stimmung, Sponsorenziele, Vorstandsziele, Ruf
-- [ ] **M7 – Karriere**: Teamwechsel, Angebote anderer Teams (wie im Fußballmanager)
+- [x] **M7 – Karriere** (v8): Teamwechsel, Angebote anderer Teams (wie im Fußballmanager)
 
 ## 4. Spielregeln an der Boxenmauer (M1)
 - **Tempo**: Schonen (+0,45 s/Runde, Verschleiß ×0,72, Risiko ×0,8) · Normal · Push (−0,28 s, ×1,3, ×1,15) ·
@@ -207,3 +207,20 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - **Vorstand und Ruf**: Saisonziel = Platz nach Grundtempo; Ruf 0–100 ändert sich je Rennen nach Teampunkten gegenüber
   der Erwartung (max. ±6), minus bei Kontostand im Minus; Urteil am Saisonende. (Entlassung/Angebote: M7)
 - Test: `node tests/season.mjs` jetzt mit Management (Projekt, Bericht, Buchungen)
+
+### v8 – M7 Karriere
+- `js/team/career.js`, Zustand `season.career` (wird in jede neue Saison übernommen): Ruf als Teamchef 0–100, Verlauf,
+  Angebote, Status entlassen.
+- **Ruf als Teamchef**: je Wochenende ±3 nach Teampunkten gegenüber der Erwartung; Saisonende: Ziel erreicht +8 und +4 je
+  Platz besser, verfehlt −4 je Platz, Teamtitel +10; Entlassung −15.
+- **Angebote** nach dem 8. und 16. Rennen (Wechsel ab dem nächsten Wochenende, gültig 2 Rennen) und zum Saisonende (für
+  die nächste Saison). Nötiger Ruf je Team nach Grundtempo (Mercedes ~85 … Cadillac ~30); stärkere Teams melden sich
+  eher (Aufstieg), höchstens 2 Angebote.
+- **Entlassung**: Ruf beim Vorstand unter 15 ab dem 5. Rennen → ohne Team; 1–2 Angebote schwächerer Teams; Startseite
+  führt dann in die Teamzentrale (Karriere). Ein Wochenende muss vorher fertig sein.
+- **Teamwechsel**: neues Team übernimmt die laufende Saison (Punkte bleiben bei den Teams), Teamzentrale startet neu mit
+  Budget, Personal und Zielen des neuen Teams.
+- **Neue Saison** (Jahr +1) mit dem alten Team oder per Angebot mit einem neuen; Kalender gleich, Datum mit neuem Jahr.
+  Fahrerbesetzungen bleiben vorerst gleich.
+- Teamzentrale: Reiter „Karriere“ (Ruf, Angebote mit Annehmen, nächste Saison, Verlauf).
+- Test: `node tests/career.mjs`
