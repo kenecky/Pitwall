@@ -133,7 +133,7 @@ export class Sound {
     if (!this.engine) return;
     const t = this.ctx.currentTime;
     const e = this.engine;
-    if (Math.abs(level - this.level) > 0.005) e.out.gain.setTargetAtTime(level * 0.16, t, 0.25);
+    if (Math.abs(level - this.level) > 0.005) e.out.gain.setTargetAtTime(level * 0.42, t, 0.25);   // Pit Wall: lauter (Verhältnis zur Ampel)
     if (Math.abs(rpm - this.rpm) > 0.005) {
       const f = 55 + rpm * 165;                       // Grundton
       for (const o of e.oscs) o.frequency.setTargetAtTime(f, t, 0.18);

@@ -377,3 +377,22 @@ export function freshGain(race, car, compound) {
 }
 
 export { fmt };
+
+// Rote Flagge: Auto steht in der Boxengasse – Reifen frei wechseln (oder behalten)
+export function redTyres(race, car, compound) {
+  if (!car.redQueued || !race.neutral || race.neutral.type !== 'red') return false;
+  if (compound === 'keep') { car.redTyre = 'keep'; return true; }
+  if (!COMPOUNDS[compound]) return false;
+  const from = car.redTyre && car.redTyre !== 'keep' ? car.redFrom : car.compound;
+  car.redFrom = from;
+  car.redTyre = compound;
+  car.compound = compound;
+  car.tyreAge = 0; car.tyreWear = 0;
+  car.usedCompounds.add(compound);
+  // Geplanten Stopp auf genau diese Mischung streichen – er ist damit erledigt
+  const n = nextStop(car);
+  if (n && n.compound === compound) car.plan.splice(car.planIdx, 1);
+  car.boxCall = null;
+  race.emit('pit', `${car.id} wechselt unter Rot auf ${COMPOUNDS[compound].name}.`, { cars: [car.id] });
+  return true;
+}

@@ -121,3 +121,18 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   - Neue Meldung: Funkton, Vibration, Tempo auf 2×, Hinweis, wenn ein anderer Tab offen ist
 - **Stimmung** 0–100 (Start 70): unter 50 langsamer (bis +0,4 s/Runde), unter 40 mehr Fehler, über 50 leicht schneller
 - Hinweis: Funkmeldungen enthalten Funktionen (Antwort-Wirkung) – beim Speichern (M5) über die Meldungsart neu aufbauen
+
+### v4 – Korrekturen
+- Strategie vor dem Rennen: jeder Fahrer in eigener Karte (Teamfarbe, Nummer, Kopfzeile)
+- Ton: Motoren deutlich lauter (Verhältnis zur Ampel); Safety Car hat eigenen Motorsound, solange es auf der Strecke ist
+  (auch Inspektionsrunde)
+- Circle of Doom: Größe passt sich dem Bereich an (kein Scrollen), Erklärtext darunter entfernt
+- Pit Wall: Fahrer in zwei Reitern (Position, 📻 bei offener Funkmeldung, „REIFEN?“ unter Rot); Teamorder darunter;
+  Funkmeldung des anderen Fahrers erscheint als Hinweis
+- Log: Funk nur vom eigenen Team
+- Rote Flagge: eigene Autos bekommen in der Boxengasse **keine** automatischen Reifen mehr. Steht das Auto, erscheint auf der
+  Karte die Reifenwahl (S/M/H/I/W oder behalten), änderbar bis zum Neustart; ohne Wahl bleiben die Reifen drauf. Ein
+  geplanter Stopp auf dieselbe Mischung entfällt.
+- Rote Flagge: Rennleitung kündigt an, wann und wie neu gestartet wird („Neustart in 4 Minuten – stehender Start …“ bzw.
+  „hinter dem Safety Car“) – im Log und als Popup; Zeit = geschätzte Bergung + Puffer, mindestens 4 Minuten Rennzeit;
+  ist die Strecke dann nicht frei, wird um 2 Minuten verschoben (neues Popup)

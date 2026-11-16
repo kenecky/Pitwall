@@ -46,7 +46,7 @@ for (let k = 0; k < N; k++) {
   for (let i = 0; i < 200; i++) { race.step(); autoDirect(race); }
   const st = race.standings();
   const ok = race.phase === 'finished';
-  for (const e of race.events) if (/^Teamorder/.test(e.text)) console.log('   ', e.text);
+  for (const e of race.events) if (/^Teamorder|^RENNLEITUNG|unter Rot/.test(e.text)) console.log('   ', (e.t / 60).toFixed(1), e.text);
   const R = race.pwRadio || { msgs: [] };
   const kinds = {}; for (const m of R.msgs) kinds[m.kind] = (kinds[m.kind] || 0) + 1;
   console.log('    Funk:', JSON.stringify(kinds), 'verfallen', R.msgs.filter(m => m.expired).length, 'Stimmung', mine.map(c => `${c.id} ${Math.round(c.mood)}`).join(' '));

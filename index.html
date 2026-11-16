@@ -82,7 +82,6 @@
         <div class="pw-circle">
           <div id="circleCars" class="pw-chips"></div>
           <canvas id="circle"></canvas>
-          <div id="circleInfo" class="pw-cinfo"></div>
         </div>
       </div>
       <div id="panel-timing" class="panel">
@@ -161,7 +160,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 3</div>
+      <div class="app-version">Version 4</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -186,6 +185,15 @@
       <div class="sheet-actions">
         <button id="newRaceBtn" class="primary-btn">Zur Startseite</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Mitteilung der Rennleitung (z. B. Neustart nach roter Flagge) -->
+  <div id="rcNotice" class="overlay hidden">
+    <div class="sheet pw-notice">
+      <div class="pw-ntag">RENNLEITUNG</div>
+      <div id="rcNoticeText" class="pw-ntext"></div>
+      <div class="sheet-actions"><button id="rcNoticeOk" class="primary-btn">OK</button></div>
     </div>
   </div>
 

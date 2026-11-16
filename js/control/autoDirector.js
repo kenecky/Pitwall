@@ -151,10 +151,19 @@ function neutralize(race, ad, t) {
     }
   }
   if (n.type === 'red' && n.phase === 'stopped') {
-    if (ad.redStopAt === null) ad.redStopAt = t;
-    if (canRestart(race) && t - ad.redStopAt > 25) {
-      restartRace(race, race.weather.wetness > 0.55 ? 'sc' : 'standing');
-      ad.redStopAt = null;
+    // Rennleitung kündigt Zeit und Art des Neustarts an (Log + Popup), verschiebt bei Bedarf
+    if (!n.restartAt) {
+      const est = Math.max(0, ...race.hazards.filter(h => !h.ended).map(h => (h.work || 0) / (WORK_RED[h.need] || 1)));
+      n.restartMode = race.weather.wetness > 0.55 ? 'sc' : 'standing';
+      n.restartAt = t + Math.ceil(Math.max(240, est + 90) / 60) * 60;
+      notice(race, `Neustart in ${Math.round((n.restartAt - t) / 60)} Minuten – ${n.restartMode === 'sc' ? 'hinter dem Safety Car' : 'stehender Start aus der Startaufstellung'}. Reifenwechsel in der Boxengasse sind frei.`);
+    } else if (t >= n.restartAt) {
+      if (canRestart(race)) {
+        restartRace(race, n.restartMode);
+      } else {
+        n.restartAt = t + 120;
+        notice(race, 'Neustart verschoben – die Strecke ist noch nicht frei. Neuer Neustart in 2 Minuten.');
+      }
     }
   }
 }
@@ -201,4 +210,13 @@ function judge(race, ad, c) {
   const pts = tr.points ? tr.points[0] + Math.round(rnd(ad) * (tr.points[1] - tr.points[0])) : 0;
   if (penalty === 'none') noFurtherAction(race, c);
   else decide(race, c, { carId: tr.offender, penalty, points: pts });
+}
+
+// Bergungstempo unter Rot je Gefahrenstufe (wie hazards.js, Spalte „Rot“)
+const WORK_RED = { yellow: 3, double: 4, vsc: 3, sc: 2.5, red: 1, pit: 1 };
+
+// Mitteilung der Rennleitung: im Log und als Popup (race.rcNotices)
+function notice(race, text) {
+  race.emit('rc', `RENNLEITUNG: ${text}`);
+  (race.rcNotices || (race.rcNotices = [])).push({ t: race.time, text });
 }

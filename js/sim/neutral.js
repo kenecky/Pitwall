@@ -423,6 +423,8 @@ export function arriveInQueue(race, car) {
   car.redQueued = true;
   rollRedWork(race, car);
   car.v = 0;
+  // Pit Wall: eigene Autos – der Teamchef entscheidet selbst über den Reifenwechsel (Pit-Wall-Konsole)
+  if (car.player) { car.redTyre = null; return; }
   const remaining = (race.laps - car.lap) * (race.wear || 1);   // Reifenverschleiß bis ins Ziel
   const used = car.usedCompounds;
   let choice = race.weather.wetness > 0.15
