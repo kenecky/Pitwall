@@ -422,3 +422,7 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   max. 2 pro Rennen. Ansicht mit Rennszene (ScenePlayer aus Race Control) und Beweisen, bis zu 2 Argumente wählen.
   Erfolg nach Wahrheit des Falls + Argumenten (begründet & passendes Hauptargument ~85 %, nur Nebenargument ~55 %,
   unpassend ~15 %, unbegründet ~3 %; falsche Argumente −12 % je Stück). Neues Urteil wirkt sofort auf die Wertung.
+
+### v26 – Training: 1× bei Rückkehr in die Box, Rote-Flagge-Banner
+- Training: kommt ein eigener Fahrer in die Garage, schaltet das Tempo auf 1×.
+- Banner bei roter Flagge in Training/Qualifying/Sprint-Quali: „ROTE FLAGGE – Session unterbrochen“ (Reifenhinweis nur Rennen/Sprint).

@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 25;
+export const VERSION = 26;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -303,6 +303,7 @@ function resetUi() {
 
 // Auto kommt nach einer Ausfahrt in die Garage: Rückmeldung des Fahrers (Training) bzw. Rundenzeit (Qualifying)
 function onGarage(car) {
+  if (race.kind === 'fp' && settings.speed !== 1 && !ff) setSpeed(1);   // Training: zurück in der Box → 1×
   const laps = (car.runLaps || []).filter(l => l.valid);
   if (race.kind === 'fp' && laps.length) {
     const fb = feedback(race.track, wk.setup[car.id], car.driver, race.time + (wk.runs[car.id]++) * 7.3);
@@ -1267,7 +1268,7 @@ function updateStatus() {
   let msg = '';
   if (n && n.type === 'sc' && n.phase === 'out') msg = 'SAFETY CAR – günstiges Boxenfenster!';
   else if (n && n.type === 'vsc' && n.phase === 'active') msg = 'VSC – Boxenstopp kostet jetzt weniger Zeit';
-  else if (n && n.type === 'red' && !n.restart) msg = 'ROTE FLAGGE – Reifenwechsel in der Boxengasse frei';
+  else if (n && n.type === 'red' && !n.restart) msg = race.isSession ? 'ROTE FLAGGE – Session unterbrochen' : 'ROTE FLAGGE – Reifenwechsel in der Boxengasse frei';
   al.textContent = msg;
   al.classList.toggle('hidden', !msg);
 }
