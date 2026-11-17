@@ -605,7 +605,7 @@ export class Race {
         }
         const zone = tr.zones.find(z => inRange(tr, B.d, z.start, z.end));
         // Teamorder „Position halten“ bzw. Taktik ohne Angriffe (Position halten, Aufhalten)
-        const hold = (B.player && A.player && this.teamOrder === 'hold') || (B.player && tacticOf(B).pass === 0);
+        const hold = (B.player && A.player && this.teamOrder === 'hold') || (B.player && tacticOf(B).pass === 0) || (this.isSession && A.team === B.team && this.givesTow(A));
         if (zone && !banned && !hold) {
           const key = `${B.lap}:${zone.corner}`;
           const zoneName = zone.corner;

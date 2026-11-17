@@ -144,6 +144,24 @@ export class Session extends Race {
       const runs = c.player && !c.autoRuns ? [] : this.planRuns(c, seg, 0);
       c.prog = { runs, runIdx: 0, phase: c.inGarage ? 'garage' : c.prog.phase, pushLeft: c.prog.pushLeft || 0 };
     }
+    this.planTows(seg);
+  }
+
+  // KI-Teams auf Windschatten-Strecken: ein Fahrer fährt so raus, dass er auf seiner Aufwärmrunde vor dem
+  // Teamkollegen (auf dessen schneller Runde) herfährt. Der Geber muss in der Out- oder In-Lap sein.
+  planTows(seg) {
+    if (this.kind === 'fp' || this.towGain < 0.15) return;
+    const teams = new Map();
+    for (const c of this.cars) if (!c.player && !c.retired && (c.elimSeg ?? null) === null && c.prog.runs.length) (teams.get(c.team.id) || teams.set(c.team.id, []).get(c.team.id)).push(c);
+    for (const pair of teams.values()) {
+      if (pair.length !== 2 || !this.rng.chance(0.2 + this.towGain)) continue;
+      const [R, G] = pair[0].driver.pace >= pair[1].driver.pace ? pair : [pair[1], pair[0]];
+      // erster Run des Schnelleren; der Geber fährt danach direkt seine eigene schnelle Runde
+      const rr = R.prog.runs[0], gr = G.prog.runs[0];
+      const dep = rr.depart + this.outLapEstimate() - this.track.baseLap * 0.3 - 4;
+      if (dep + this.outLapEstimate() + 10 > seg.dur) continue;
+      gr.depart = dep; gr.towGive = true;
+    }
   }
 
   // Ausfahrten eines Autos für den Abschnitt (ab Session-Uhr „from“)
@@ -181,9 +199,9 @@ export class Session extends Race {
   // ---------- Pit Wall: Befehle für eigene Autos ----------
   // Sofort rausfahren mit gewählter Mischung, Anzahl schneller Runden und Sprit
   // tow: ID des Teamkollegen, der Windschatten gibt · gap: Abstand zum Vordermann aufbauen (freie Fahrt)
-  playerRun(car, { compound = 'S', push = 1, fuel = 0.1, set = null, delay = 0, tow = null, gap = false } = {}) {
+  playerRun(car, { compound = 'S', push = 1, fuel = 0.1, set = null, delay = 0, gap = false } = {}) {
     if (!car.inGarage || car.retired || car.elimSeg !== null || this.segFlag || this.segState !== 'run' || (this.neutral && this.neutral.type === 'red')) return false;
-    car.prog.runs.splice(car.prog.runIdx, 0, { depart: this.clock + delay, push, compound, fuel, tow, gap });
+    car.prog.runs.splice(car.prog.runIdx, 0, { depart: this.clock + delay, push, compound, fuel, gap });
     car.nextSet = set;
     return true;
   }
@@ -290,6 +308,7 @@ export class Session extends Race {
     for (const c of on) {
       c.dirty = false;
       c.tow = false;
+      c.towing = null;
       let best = Infinity, ahead = null;
       for (const o of on) {
         if (o === c) continue;
@@ -299,7 +318,8 @@ export class Session extends Race {
       c.aheadGap = best; c.aheadId = ahead ? ahead.id : null;
       if (c.prog.phase !== 'push') continue;
       // Windschatten vom Teamkollegen: im richtigen Abstand kein Nachteil, sondern Gewinn auf den Geraden
-      if (c.towFrom && ahead && ahead.id === c.towFrom && best >= c.v * 0.3 && best <= c.v * 2.2) { c.tow = true; continue; }
+      // Windschatten: Teamkollege vorne gibt ihn auf seiner Aufwärm- oder Auslaufrunde, im richtigen Abstand
+      if (ahead && ahead.team === c.team && this.givesTow(ahead) && best >= c.v * 0.3 && best <= c.v * 2.2) { c.tow = true; ahead.towing = c.id; continue; }
       if (best < Math.max(40, c.v * 1.2)) { c.dirty = true; c.trafficT = (c.trafficT || 0) + DT; }
     }
   }
@@ -365,24 +385,44 @@ export class Session extends Race {
   // Wert des Windschattens je Strecke (s pro Runde): viele lange Geraden → viel (Monza ~0,35), Monaco ~0
   get towGain() {
     if (this._towGain === undefined) {
-      const tr = this.track;
-      let fast = 0, n = 0;
-      for (let i = 0; i < tr.N; i += 4) { n++; if (isStraight(tr, i * tr.ds)) fast++; }
-      this._towGain = Math.round(Math.max(0, fast / n - 0.3) * 100) / 100;
+      // Vollgas-Geraden messen: Länge über 350 m zählt, die längste Gerade zusätzlich
+      const tr = this.track, step = tr.ds * 2, n = Math.ceil(tr.L / step);
+      let s0 = 0;
+      for (let i = 0; i < n; i++) if (!isStraight(tr, i * step)) { s0 = i; break; }
+      let run = 0, sum = 0, longest = 0;
+      for (let k = 0; k <= n; k++) {
+        if (isStraight(tr, ((s0 + k) % n) * step)) run += step;
+        else { if (run > 350) sum += run - 350; longest = Math.max(longest, run); run = 0; }
+      }
+      this._towGain = Math.round((0.13 * sum + 0.12 * Math.max(0, longest - 700)) / 10) / 100;
     }
     return this._towGain;
   }
 
+  givesTow(car) {
+    return Boolean(car.towGive && car.prog && (car.prog.phase === 'out' || car.prog.phase === 'cool') && !car.inPit && !car.inGarage);
+  }
+  // Teamkollege, der hinter dem Geber auf der schnellen Runde ist (oder gleich beginnt): Abstand in m, sonst null
+  towTarget(car) {
+    const L = this.track.L;
+    const mate = this.cars.find(o => o !== car && o.team === car.team && !o.retired && !o.inGarage && !o.inPit && o.prog && (o.prog.phase === 'push' || o.prog.phase === 'out'));
+    if (!mate) return null;
+    const behind = ((car.d - mate.d) % L + L) % L;
+    return behind < Math.max(55, car.v) * 15 ? { mate, behind } : null;
+  }
+
   programFactor(car) {
     const ph = car.prog && car.prog.phase;
-    if (ph === 'out' && !car.inPit && (car.towFrom || car.wantGap)) {
-      const v = Math.max(55, car.v), g = car.aheadGap ?? Infinity;
-      if (car.towFrom) {
-        // hinter dem Teamkollegen etwa 1 s Abstand halten
-        const mate = this.carById[car.towFrom];
-        if (mate && !mate.inGarage && !mate.inPit && car.aheadId === mate.id) return g < v * 0.8 ? 0.7 : g > v * 1.4 ? 0.92 : 0.82;
-        return 0.86;
+    if (this.givesTow(car)) {
+      // Windschatten geben: auf den Teamkollegen warten, dann mit ~1 s Vorsprung voll vorneweg
+      const t = this.towTarget(car);
+      if (t) {
+        const v = Math.max(55, t.mate.v);   // Abstand in Sekunden des Teamkollegen
+        return t.behind > v * 1.6 ? 0.78 : t.behind > v * 0.5 ? 1.04 : 1.08;   // kalte Reifen: voll attackieren
       }
+    }
+    if (ph === 'out' && !car.inPit && car.wantGap) {
+      const v = Math.max(55, car.v), g = car.aheadGap ?? Infinity;
       return g < v * 5.5 ? 0.62 : 0.82;   // freie Fahrt: Lücke zum Vordermann aufmachen (~5 s)
     }
     if (ph === 'out') return 0.82;
@@ -402,6 +442,7 @@ export class Session extends Race {
   // Autos auf Aufwärm-/Auslaufrunde lassen Autos auf schneller Runde vorbei – meistens
   yieldsTo(B, A) {
     if (!B.prog || !A.prog || B.prog.phase !== 'push' || A.prog.phase === 'push') return false;
+    if (A.team === B.team && this.givesTow(A)) return false;   // Windschatten: vorne bleiben
     const key = `${A.id}>${B.id}:${B.lap}`;
     this.impedeChecked = this.impedeChecked || {};
     if (!this.impedeChecked[key]) {
@@ -435,7 +476,8 @@ export class Session extends Race {
     car.prog.phase = 'garage';
     car.boxInPrev = null;
     car.pass = null;
-    car.towFrom = null; car.wantGap = false; car.tow = false;
+    car.wantGap = false; car.tow = false; car.towing = null;
+    if (!car.player) car.towGive = false;
     if (car.player && this.onPlayerGarage) this.onPlayerGarage(car);
   }
 
@@ -453,13 +495,13 @@ export class Session extends Race {
     car.stopTimer = 0;
     car.stoppedThisVisit = true;
     car.prog.phase = 'out';
-    car.towFrom = run.tow || null;
+    if (!car.player) car.towGive = Boolean(run.towGive);   // eigene Autos: Schalter des Teamchefs
     car.wantGap = Boolean(run.gap);
     car.outStartD = car.d;
     car.outT0 = this.time;
     rollPitQueue(this, car);
     rollSlowOutlap(this, car);   // Aufwärmrunde zählt erst ab einer vollen Runde
-    if (run.gap || run.tow) rollSlowOutlap(this, car);   // wer Abstand sucht, fährt öfter zu langsam
+    if (run.gap || car.towGive) rollSlowOutlap(this, car);   // wer Abstand sucht, fährt öfter zu langsam
     rollOutlapPass(this, car);
     car.prog.pushLeft = run.push;
     car.compromised = false;

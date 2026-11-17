@@ -438,3 +438,16 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   - WINDSCHATTEN VON <Teamkollege>: Teamkollege fährt zuerst raus (1 schnelle Runde), eigener Fahrer folgt mit ~1 s Abstand.
     Gewinn je Strecke aus dem Geradenanteil (session.towGain: Monza ~0,3 s, Monaco 0). Klappt nicht immer
     (Autos dazwischen, zu dicht = verwirbelte Luft). Monza-Test: Ø −0,14 s, gelungene Tows bis −1 s.
+
+### v28 – Session-Sound nach Verkehr, Windschatten neu (Geber in Out-/In-Lap, auch KI)
+- Training/Qualifying: Motorsound nach Zahl der fahrenden Autos (leer = still, wenige = leise, viele = laut),
+  Drehzahl höher, je mehr Autos auf schneller Runde sind.
+- Windschatten neu: Schalter „WINDSCHATTEN FÜR <Teamkollege>“ am Geber. Er gibt ihn nur auf seiner Aufwärm- oder
+  Auslaufrunde: wartet (langsamer), bis der Teamkollege auf der schnellen Runde ~1,5 s dahinter ist, fährt dann voll
+  vorneweg, lässt ihn nicht vorbei. Teamchef muss das Rausfahren abpassen: Renningenieur nennt den Zeitpunkt
+  („in 12 s rausfahren“ / „JETZT“ / „zu spät“), wenn der Teamkollege auf der Aufwärmrunde ist. Auf der Strecke:
+  „wartet auf …“, „gibt … Windschatten“.
+- Wert je Strecke (session.towGain) aus Vollgas-Geraden > 350 m und der längsten Geraden: Monza 0,34 · Las Vegas 0,33 ·
+  Baku 0,22 · Jeddah 0,19 · Miami 0,18 · Shanghai/Spa 0,17 · Mexiko 0,16 · … · Monaco 0.
+- KI: auf Strecken ab 0,15 s plant ein Team mit Chance 0,2 + Wert pro Abschnitt einen Tow (langsamerer Fahrer gibt).
+- Monza-Test (12× Q1): Ø 84,90 → 84,28 s, Windschatten im Schnitt 33 von 84 s der Runde (klappt nicht immer).
