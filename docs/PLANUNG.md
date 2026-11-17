@@ -451,3 +451,17 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Baku 0,22 · Jeddah 0,19 · Miami 0,18 · Shanghai/Spa 0,17 · Mexiko 0,16 · … · Monaco 0.
 - KI: auf Strecken ab 0,15 s plant ein Team mit Chance 0,2 + Wert pro Abschnitt einen Tow (langsamerer Fahrer gibt).
 - Monza-Test (12× Q1): Ø 84,90 → 84,28 s, Windschatten im Schnitt 33 von 84 s der Runde (klappt nicht immer).
+
+### v29 – Debriefing nach dem Training, Windschatten nur auf der längsten Geraden
+- Ergebnis des Trainings mit DEBRIEFING: je Fahrer alle Rückmeldungen nach Stints (Setup, Runden, Bestzeit), Setup mit
+  +/− für Qualifying und Rennen anpassbar (Ingenieur-Einschätzung in der Saison). Eine bei Session-Ende noch nicht
+  ausgewertete Ausfahrt (Auto noch draußen, Rote Flagge) wird nachgeholt.
+- Windschatten nur auf der längsten Geraden, die ganz in einer Runde liegt (session.towStraight). Wert aus ihrer Länge:
+  Las Vegas 0,35 · Baku 0,24 · Shanghai 0,22 · Mexiko 0,20 · Miami/Spa 0,17 · COTA/Abu Dhabi 0,14 · Monza 0,14 · … · Monaco 0.
+- Ablauf: Geber fährt zuerst raus, Teamkollege 3–10 s danach. Geber bleibt vorne (andere auf Aufwärm-/Auslaufrunde lassen
+  ihn vorbei), wartet und hält vor der Geraden ~1–1,8 s Vorsprung, auf der Geraden saugt sich der Teamkollege heran
+  (mehr Topspeed). ~170 m vor dem Bremspunkt geht der Geber zur Seite (Karte), bremst früher, der Teamkollege fährt in der
+  Bremszone vorbei; danach ist der Windschatten erledigt. Falls nötig, fährt der Geber eine zweite Aufwärmrunde.
+  Hängt der Teamkollege vor der Geraden >4 s dicht dahinter, lässt der Geber ihn vorbei (Windschatten abgebrochen).
+- Test je 12× Q1: Las Vegas 12/12 gelungen (Ø −0,45 s), Monza 9/12 (Ø −0,42 s), Mexiko 5/12 (Ø −0,07 s; Gerade direkt
+  nach der Ziellinie ist schwer zu treffen). KI auf Strecken ab 0,12 s.

@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 28;
+export const VERSION = 29;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -1595,15 +1595,14 @@ function towHint(car) {
   const m = mate(car);
   if (!m || race.kind === 'fp') return '';
   if (car.inGarage) {
-    if (m.inGarage || !m.prog || m.prog.phase !== 'out' || m.outT0 === undefined) return `🎧 Windschatten: Schick zuerst ${m.id} raus. Wenn er auf der Aufwärmrunde ist, sage ich dir, wann ${car.id} los muss.`;
-    const pushAt = m.outT0 + race.outLapEstimate();          // Teamkollege beginnt seine schnelle Runde
-    const go = pushAt - race.track.baseLap * 0.3 - 4 - race.time;   // dann muss der Geber aus der Boxengasse kommen
-    if (go > 1) return `🎧 Windschatten für ${m.id}: in ${Math.ceil(go)} s rausfahren.`;
-    if (go > -10) return `🎧 Windschatten für ${m.id}: JETZT rausfahren!`;
-    return `🎧 Zu spät für den Windschatten auf der Aufwärmrunde – ${m.id} ist schon auf der schnellen Runde.`;
+    if (m.inGarage) return `🎧 Windschatten: Schick ${car.id} zuerst raus und ${m.id} 3–10 s danach. ${car.id} bleibt vorne, wartet auf ihn und zieht ihn über die längste Gerade.`;
+    return `🎧 ${m.id} ist schon draußen – ${car.id} müsste vor ihm sein. Windschatten nur noch auf der Auslaufrunde von ${car.id} möglich.`;
   }
+  if (m.inGarage && !car.towDone && race.givesTow(car)) return `🎧 Jetzt ${m.id} rausschicken – ${car.id} wartet auf ihn.`;
   const t = race.towTarget(car);
+  if (car.towDone) return `🎧 Windschatten gegeben.`;
   if (!race.givesTow(car)) return car.prog.phase === 'push' ? `🎧 ${car.id} ist auf der schnellen Runde – Windschatten erst wieder auf der Auslaufrunde.` : '';
+  if (car.towAside) return `🎧 ${car.id} macht Platz – ${m.id} geht in der Bremszone vorbei.`;
   if (car.towing) return `🎧 ${car.id} gibt ${m.id} Windschatten.`;
   if (t) return `🎧 ${car.id} wartet auf ${m.id} (${fmt(t.behind / Math.max(40, m.v || 40))} s dahinter).`;
   return `🎧 ${m.id} ist nicht in Reichweite – kein Windschatten.`;
@@ -2118,6 +2117,27 @@ $('protestBody').addEventListener('click', e => {
   }
 });
 $('protestClose').addEventListener('click', () => { if (protestPlayer) { protestPlayer.destroy(); protestPlayer = null; } $('protestView').classList.add('hidden'); });
+// Debriefing nach dem Training: alle Rückmeldungen der Fahrer je Stint, Setup fürs Qualifying anpassen
+function debriefHtml() {
+  return `<div class="pw-label">🔧 DEBRIEFING – SETUP FÜR QUALIFYING UND RENNEN</div>` + playerCars(race).map(c => {
+    const notes = wk.notes[c.id] || [];
+    const est = wk.season && season ? engineerEstimate(season, setupScore(race.track, wk.setup[c.id]), `${wk.seed}${JSON.stringify(wk.setup[c.id])}`) : null;
+    return `<div class="pw-mcard pw-debrief" data-dcar="${c.id}"><b>${esc(c.driver.first)} ${esc(c.driver.last)}</b>${est !== null ? `<small>Ingenieure: Setup ~${est} %</small>` : ''}
+      <div class="pw-notes">${notes.length ? notes.map((n, i) => `<div><i>Stint ${i + 1}</i> „${esc(n.text)}“<small>Flügel ${n.setup.wing} · Balance ${n.setup.bal} · Federung ${n.setup.stiff} · ${n.n ? `${n.n} Rd, beste ${formatLap(n.best)}` : 'keine gezeitete Runde'}</small></div>`).join('') : '<div>Keine Ausfahrt – keine Rückmeldung.</div>'}</div>
+      <div class="pw-setup">${Object.entries(SETUP_KEYS).map(([k, d]) => `<div class="pw-srow"><span>${d.name}</span><button data-dset="${k}" data-d="-1">−</button><b>${wk.setup[c.id][k]}</b><button data-dset="${k}" data-d="1">+</button><small>${d.lo} ↔ ${d.hi}</small></div>`).join('')}</div>
+    </div>`;
+  }).join('') + '<div class="pw-hint">Ab dem Qualifying gilt Parc fermé – danach lässt sich das Setup nicht mehr ändern.</div>';
+}
+$('resultBody').addEventListener('click', e => {
+  const b = e.target.closest('[data-dset]');
+  if (!b || !race || race.kind !== 'fp' || wk.setupLocked) return;
+  const car = b.closest('[data-dcar]').dataset.dcar, k = b.dataset.dset, d = SETUP_KEYS[k];
+  wk.setup[car][k] = Math.max(d.min, Math.min(d.max, wk.setup[car][k] + Number(b.dataset.d)));
+  const y = $('resultBody').closest('.sheet').scrollTop;
+  showSessionResults();
+  $('resultBody').closest('.sheet').scrollTop = y;
+  autosave();
+});
 function showSessionResults() {
   const st = race.standings();
   const best = st[0] && race.rankTime(st[0]);
@@ -2128,7 +2148,9 @@ function showSessionResults() {
   }).join('');
   const mine = playerCars(race);
   $('resultTitle').textContent = `⏱ ${race.info.name} · ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
-  $('resultBody').innerHTML = `<div class="pw-sum"><b>${esc(TEAM_BY_ID[race.playerTeam].name)}</b>: ${mine.map(c => `${c.id} P${st.indexOf(c) + 1}`).join(' · ')}${race.kind !== 'fp' ? ' – das ist die Startaufstellung.' : ''}</div>
+  // Training: noch nicht ausgewertete letzte Ausfahrt nachholen (Session endete, bevor das Auto in der Garage war)
+  if (race.kind === 'fp') for (const c of mine) if ((c.runLaps && c.runLaps.length) || c.redAbort) onGarage(c);
+  $('resultBody').innerHTML = `${race.kind === 'fp' ? debriefHtml() : ''}<div class="pw-sum"><b>${esc(TEAM_BY_ID[race.playerTeam].name)}</b>: ${mine.map(c => `${c.id} P${st.indexOf(c) + 1}`).join(' · ')}${race.kind !== 'fp' ? ' – das ist die Startaufstellung.' : ''}</div>
     <table class="pw-res"><tbody>${rows}</tbody></table>`;
   $('resultScreen').classList.remove('hidden');
 }

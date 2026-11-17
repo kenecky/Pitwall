@@ -524,6 +524,11 @@ export class TrackMap {
       const side = car.gridPos % 2 === 1 ? -1 : 1;
       lat = side * 4 * Math.min(1, Math.max(0, (120 - car.d) / 120));
     }
+    // Windschatten-Geber am Ende der Geraden: weicht zur Seite aus (weich ein- und ausblenden, nur Darstellung)
+    if (car.towAside || car._aside > 0.01) {
+      car._aside = (car._aside || 0) + ((car.towAside ? 1 : 0) - (car._aside || 0)) * 0.06;
+      lat += 4.5 * car._aside;
+    }
     if (car.pass) {
       const target = race.carById[car.pass.target];
       const gap = Math.abs(wrapD(race.track, target.d - car.d));
