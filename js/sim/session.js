@@ -127,6 +127,9 @@ export class Session extends Race {
   startSegment(i) {
     this.segIdx = i;
     this.clock = 0;
+    // Sektorzeiten (violett/grün/gelb) gelten je Session bzw. Q1/Q2/Q3: zurücksetzen
+    this.bestSec = [Infinity, Infinity, Infinity];
+    for (const c of this.cars) { c.pbSec = [Infinity, Infinity, Infinity]; c.lastSecs = null; c.curSecs = []; }
     this.segFlag = false;
     this.segState = 'run';
     const seg = this.segment;

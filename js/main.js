@@ -42,7 +42,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 17;
+export const VERSION = 18;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -67,6 +67,7 @@ function bootDone() {
 
 const SPEEDS = [1, 2, 4, 8, 16, 32];
 const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+const SPRINT_PTS = [8, 7, 6, 5, 4, 3, 2, 1];   // Sprint: nur die ersten 8
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
@@ -288,6 +289,7 @@ function resetUi() {
   ui.lastMsg = 0;
   ui.noticeSeen = 0;
   ui.run = {};
+  ui.qa = {};
   ui.ffAsked = false;
   ff = false;
   $('ffTag').classList.add('hidden');
@@ -1589,6 +1591,42 @@ function trafficForecast(car) {
   const score = outlap + soon * 0.8 + onTrack * 0.15;
   return { level: score < 2.5 ? 'niedrig' : score < 5 ? 'mittel' : 'hoch', cls: score < 2.5 ? 'free' : score < 5 ? 'mid' : 'traffic', outlap, soon, onTrack };
 }
+// Sektor-Quadrate im Reiter (wie in ZEITEN)
+function tabSecs(car) {
+  if (!car.prog) return '';
+  const list = car.prog.phase === 'push' ? (car.curSecs && car.curSecs.length ? car.curSecs : car.lastSecs || []) : car.lastSecs || [];
+  return `<span class="secs">${[0, 1, 2].map(k => `<i class="${list[k] || ''}"></i>`).join('')}</span>`;
+}
+// Einschätzung des Renningenieurs in Q1/Q2: reicht die Zeit? Erwartete Verbesserung der anderen: Streckenentwicklung
+// und Autos, die noch fahren (in der Garage mit geplantem Run oder gerade auf der Strecke)
+function qualiAssess(car) {
+  if (race.kind === 'fp' || race.segState !== 'run' || car.retired) return null;
+  const seg = race.segment;
+  if (!seg.keep || (car.elimSeg !== null && car.elimSeg !== undefined)) return null;
+  const my = car.segBest && car.segBest[race.segIdx];
+  if (!my) return { key: 'none', cls: '', text: 'Noch keine Zeit – wir brauchen eine Runde.', radio: '' };
+  const rk = race.segmentRanking();
+  const pos = rk.indexOf(car) + 1;
+  const tOf = c => c && c.segBest && c.segBest[race.segIdx];
+  const still = rk.filter(c => c !== car && (!c.inGarage || (c.prog.runs[c.prog.runIdx] && !race.segFlag))).length;
+  const improve = race.segFlag ? 0 : 0.15 + Math.min(0.35, still * 0.03);
+  const fmt3 = x => x.toFixed(3).replace('.', ',');
+  if (pos > seg.keep) {
+    const cutT = tOf(rk[seg.keep - 1]);
+    return { key: 'out', cls: 'bad', text: `P${pos} – ${cutT ? `${fmt3(my - cutT)} s hinter der Grenze` : 'außerhalb'}. Wir müssen noch mal raus!`, radio: `Wir sind P${pos} und raus. Wir müssen noch mal fahren!` };
+  }
+  const below = tOf(rk[seg.keep]);   // erstes Auto unter dem Strich
+  if (!below) {
+    const timed = rk.filter(tOf).length;
+    return { key: 'early', cls: '', text: `P${pos} – erst ${timed} Autos haben eine Zeit. Genaue Einschätzung folgt, sobald mehr Zeiten stehen.`, radio: '' };
+  }
+  const margin = below - my;
+  if (race.segFlag) return { key: 'flag', cls: '', text: `P${pos} – Zielflagge, jetzt entscheiden die letzten Runden der anderen.`, radio: '' };
+  if (margin - improve > 0.35) return { key: 'safe', cls: 'good', text: `P${pos}, ${fmt3(margin)} s Polster – das reicht sicher. Wir können in der Box bleiben.`, radio: `P${pos}, das reicht sicher. Wir bleiben drin und sparen Reifen.` };
+  if (margin - improve > 0) return { key: 'tight', cls: 'warn', text: `P${pos}, nur ${fmt3(margin)} s Polster – die Strecke wird schneller (${still} Autos fahren noch). Ein weiterer Run wäre sicherer.`, radio: `P${pos}, das wird knapp. Wir überlegen, noch mal rauszufahren.` };
+  return { key: 'risky', cls: 'bad', text: `P${pos}, aber nur ${fmt3(margin)} s vor dem Strich – das reicht wahrscheinlich nicht. Noch mal raus!`, radio: `P${pos}, das reicht wahrscheinlich nicht. Wir müssen noch mal raus!` };
+}
+
 function sessStatus(car) {
   if (car.retired) return `AUSFALL – ${car.dnf || 'Defekt/Unfall'}`;
   if (car.elimSeg !== null && car.elimSeg !== undefined) return `Ausgeschieden in ${race.info.segments[car.elimSeg].id}`;
@@ -1610,6 +1648,7 @@ function buildSessionWall() {
         <span class="pw-gaps" data-f="gaps"></span>
       </div>
       <div class="pw-status" data-f="status"></div>
+      <div class="pw-qa hidden" data-f="qa"></div>
       <div class="pw-row"><span class="pw-tyre" data-f="tyre"></span><span class="pw-life"><b data-f="life"></b></span><span class="pw-meta" data-f="meta"></span></div>
       <div class="pw-label">AUSFAHRT</div>
       <div class="pw-cmp" data-f="cmp">${['S', 'M', 'H', 'I', 'W'].map(k => `<button class="${k}" data-rc="${k}">${k}<small></small></button>`).join('')}</div>
@@ -1644,7 +1683,23 @@ function renderSessionWall() {
     const i = st.indexOf(car);
     const tab = $('wall').querySelector(`[data-wtab="${car.id}"]`);
     tab.classList.toggle('on', car.id === ui.wallCar);
-    tab.querySelector('span').innerHTML = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? 'Garage' : `<i class="pw-tyre ${car.compound}">${car.compound}</i> ${car.tyreAge} Rd`}`;
+    tab.querySelector('span').innerHTML = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? 'Garage' : `<i class="pw-tyre ${car.compound}">${car.compound}</i> ${car.tyreAge} Rd ${tabSecs(car)}`}`;
+    // Renningenieur im Qualifying: reicht die Zeit für den nächsten Abschnitt?
+    const qa = qualiAssess(car);
+    const qel = f('qa');
+    qel.classList.toggle('hidden', !qa);
+    if (qa) {
+      qel.className = `pw-qa ${qa.cls}`;
+      qel.innerHTML = `🎧 <b>Renningenieur:</b> ${qa.text}`;
+      const key = `${race.segIdx}|${qa.key}`;
+      if (ui.qa[car.id] !== key) {
+        if (qa.radio) {
+          race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „${qa.radio}“`, { cars: [car.id], own: true });
+          if (qa.key === 'out' || qa.key === 'risky') { sound.radio(); toast(`🎧 ${car.id}: ${qa.radio}`, 3500); }
+        }
+        ui.qa[car.id] = key;
+      }
+    }
     el.classList.toggle('out', car.retired);
     f('pos').textContent = `P${i + 1}`;
     const t = race.rankTime(car);
@@ -1905,7 +1960,8 @@ function showResults() {
   const mine = playerCars(race);
   let teamPts = 0;
   const rows = st.map((c, i) => {
-    const pts = !c.retired && !c.dsq && i < 10 ? POINTS[i] : 0;
+    const table = race.kind === 'sprint' ? SPRINT_PTS : POINTS;
+    const pts = !c.retired && !c.dsq ? table[i] || 0 : 0;
     if (c.player) teamPts += pts;
     let gap = '';
     if (c.dsq) gap = 'DSQ';

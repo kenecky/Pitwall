@@ -363,3 +363,14 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Jede Session (Training, Qualifying, Sprint, Rennen) startet mit Tempo 1×.
 - **Wetter**: in der laufenden Session wieder das Regenradar (mit Vorhersage +5…+60 Min. und Zeitregler), darunter die
   Vorhersage für alle weiteren Sessions des Wochenendes.
+
+### v18 – Reiter mit Sektoren, Sektor-Reset, Renningenieur im Qualifying, Sprint-Punkte
+- Fahrer-Reiter in Sessions: Platz, Reifen und Runden in einer Zeile bündig, dahinter die drei Sektor-Quadrate.
+- Sektorzeiten (violett/grün/gelb) werden zu Beginn jeder Session und jedes Abschnitts (Q1/Q2/Q3, SQ1–SQ3) zurückgesetzt:
+  erste schnelle Runde ist mindestens grün, der erste Fahrer mit Zeit hat alle Sektoren violett.
+- **Renningenieur im Qualifying** (Q1/Q2, SQ1/SQ2): Einschätzung auf der Fahrerkarte und per Funk, sobald sie sich ändert –
+  sicher (Polster zum ersten Auto unter dem Strich abzüglich erwarteter Verbesserung > 0,35 s), knapp, reicht
+  wahrscheinlich nicht, raus. Erwartete Verbesserung: 0,15 s Streckenentwicklung + 0,03 s je Auto, das noch fährt (max. 0,5 s).
+  Bei „raus“/„reicht nicht“ zusätzlich Funkton und Hinweis.
+- **Fehler behoben**: Sprint-Ergebnis zeigte Rennpunkte (25-18-15 …). Jetzt 8-7-6-5-4-3-2-1 für die ersten 8 (Einzelrennen
+  und Saison; die Saisonwertung rechnete schon richtig, nur die Anzeige im Ergebnis war falsch).

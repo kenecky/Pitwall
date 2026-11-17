@@ -426,3 +426,14 @@
 .pw-ledger table { margin: 0 8px 8px; width: calc(100% - 16px); font-size: 11.5px; }
 .pw-press { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); border-left: 3px solid #ff6a3d; font-size: 13px; line-height: 1.45; color: #e6e9ef; }
 .pw-press b { display: block; font: 800 11px system-ui, sans-serif; letter-spacing: .08em; color: #ffb08a; text-transform: uppercase; margin-bottom: 2px; }
+
+/* v18: Reiter-Zeile bündig, Renningenieur */
+.pw-dtabs button span { display: inline-flex; align-items: center; gap: 4px; line-height: 1; }
+.pw-dtabs button span .pw-tyre { vertical-align: 0 !important; flex: none; }
+.pw-dtabs button span .secs { margin-left: 2px; }
+.pw-dtabs button span .secs i { width: 7px; height: 11px; }
+.pw-qa { margin-top: 6px; padding: 7px 9px; border-radius: 8px; background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.35); font-size: 12px; line-height: 1.4; color: #dbeafe; }
+.pw-qa.good { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.45); color: #dcfce7; }
+.pw-qa.warn { background: rgba(250,204,21,.1); border-color: rgba(250,204,21,.45); color: #fef9c3; }
+.pw-qa.bad { background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.5); color: #fee2e2; }
+.pw-qa.hidden { display: none; }
