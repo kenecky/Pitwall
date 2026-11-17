@@ -44,7 +44,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 23;
+export const VERSION = 24;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -292,6 +292,7 @@ function resetUi() {
   ui.noticeSeen = 0;
   ui.run = {};
   ui.qa = {};
+  ui.olWarn = {};
   ui.ffAsked = false;
   ff = false;
   $('ffTag').classList.add('hidden');
@@ -1604,6 +1605,8 @@ function trafficForecast(car) {
 // Runden auf dem montierten Reifensatz insgesamt (über alle Sessions des Wochenendes)
 const tyreLaps = car => (car.curSet && car.curSet.lapCount !== undefined ? car.curSet.lapCount : car.tyreAge);
 
+const mmss = t => `${Math.floor(Math.max(0, t) / 60)}:${String(Math.floor(Math.max(0, t) % 60)).padStart(2, '0')}`;
+
 // Sektor-Quadrate im Reiter (wie in ZEITEN)
 function tabSecs(car) {
   if (!car.prog) return '';
@@ -1776,10 +1779,19 @@ function renderSessionWall() {
     if (out) hint = 'Für diesen Teil ist der Fahrer ausgeschieden.';
     else if (race.segState === 'break') hint = 'Pause – gleich geht es weiter.';
     else if (race.segFlag) hint = 'Zielflagge – nur bereits begonnene Runden zählen noch.';
-    else if (car.inGarage && !fp && race.remaining < race.track.baseLap * 2.1 + 20 && !t) hint = 'Letzte Chance: Aufwärmrunde + schnelle Runde passen gerade noch!';
-    else if (car.inGarage && race.remaining < race.track.baseLap * 1.3 + 25) hint = 'Zu spät – die schnelle Runde würde nicht mehr vor der Zielflagge beginnen.';
-    else if (car.inGarage && !fp && set && set.laps >= 0.05) hint = 'Gebrauchter Satz – langsamer als neue Softs.';
-    else if (car.inGarage && !fp) hint = `Strecke wird schneller – späte Runden sind besser, aber riskanter (Verkehr, Rote Flagge).`;
+    else if (car.inGarage && race.remaining < race.outLapEstimate()) hint = 'Zu spät – die schnelle Runde würde nicht mehr vor der Zielflagge beginnen.';
+    else if (car.inGarage && !fp) {
+      // Renningenieur: Dauer der Out-Lap und spätester Zeitpunkt zum Rausfahren
+      const ol = race.outLapEstimate(), latest = ol + 8, left = race.remaining - latest;
+      hint = left <= 0 ? `🎧 Jetzt sofort raus! Out-Lap ca. ${mmss(ol)} – es wird sehr knapp.`
+        : `🎧 Out-Lap ca. ${mmss(ol)} · spätestens bei ${mmss(latest)} Restzeit rausfahren (noch ${mmss(left)}).`;
+      if (left > 0 && left < 30 && (ui.olWarn ||= {})[car.id] !== race.segIdx && !(car.prog.runs[car.prog.runIdx])) {
+        ui.olWarn[car.id] = race.segIdx;
+        const txt = `In ${Math.ceil(left)} Sekunden müssen wir spätestens raus, sonst schaffen wir keine Runde mehr.`;
+        race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „${txt}“`, { cars: [car.id], own: true });
+        sound.radio(); toast(`🎧 ${car.id}: ${txt}`, 3500);
+      }
+    }
     else if (car.inGarage && fp) hint = 'Mehrere Runden mit viel Sprit zeigen das Renntempo, wenig Sprit die Quali-Pace. Nach jeder Ausfahrt gibt der Fahrer Rückmeldung.';
     f('hint').textContent = hint;
     // Runden

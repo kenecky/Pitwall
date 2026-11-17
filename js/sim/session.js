@@ -14,6 +14,8 @@ export const SESSION_INFO = {
   quali: { name: 'Qualifying',        short: 'Q',  segments: [{ id: 'Q1', dur: 600, keep: 16 }, { id: 'Q2', dur: 480, keep: 10 }, { id: 'Q3', dur: 420 }] },
   sq:    { name: 'Sprint-Qualifying', short: 'SQ', segments: [{ id: 'SQ1', dur: 420, keep: 16 }, { id: 'SQ2', dur: 360, keep: 10 }, { id: 'SQ3', dur: 300 }] },
 };
+const OUTLAP_RATIO = 1.5;   // Erfahrungswert, wird im Lauf der Session durch gemessene Out-Laps ersetzt
+
 export class Session extends Race {
   constructor(opts) {
     // Abschnittsdauern je nach Einstellung „Dauer“
@@ -348,6 +350,11 @@ export class Session extends Race {
     if (this.segFlag && !n && this.cars.every(c => c.retired || c.inGarage || c.prog.phase !== 'push')) this.endSegment();
   }
 
+  // Geschätzte Dauer der Out-Lap (Garage bis Start der schnellen Runde) in Sekunden
+  outLapEstimate() {
+    return this.outLapAvg || this.track.baseLap * OUTLAP_RATIO;
+  }
+
   programFactor(car) {
     const ph = car.prog && car.prog.phase;
     if (ph === 'out') return 0.82;
@@ -418,6 +425,7 @@ export class Session extends Race {
     car.stoppedThisVisit = true;
     car.prog.phase = 'out';
     car.outStartD = car.d;
+    car.outT0 = this.time;
     rollPitQueue(this, car);
     rollSlowOutlap(this, car);   // Aufwärmrunde zählt erst ab einer vollen Runde
     rollOutlapPass(this, car);
@@ -453,6 +461,11 @@ export class Session extends Race {
       if (car.d - (car.outStartD ?? -Infinity) < this.track.L * 0.6) return;   // nur über die Linie in der Boxengasse
       p.phase = this.segFlag ? 'cool' : 'push';
       car.trafficT = 0;
+      // Dauer Garage → Start der schnellen Runde (für den Renningenieur), ohne Neutralisierung
+      if (car.outT0 !== undefined && !this.neutral) {
+        const d = this.time - car.outT0;
+        this.outLapAvg = this.outLapAvg ? this.outLapAvg * 0.8 + d * 0.2 : d;
+      }
     }
   }
 

@@ -409,3 +409,8 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Neue Sektor-Bestzeit: beim bisherigen Halter wird der Sektor grün (Training/Qualifying und Rennen).
 - Tempo-Knopf: Finger wird an den Knopf gebunden (Pointer-Capture), abgebrochene Gesten räumen den Timer auf,
   hängender Menü-Zustand wird repariert. (Meldung: in Q3 Suzuka ~30 s keine Reaktion.)
+
+### v24 – Renningenieur sagt die Out-Lap-Dauer an
+- Session misst die Dauer Garage → Start der schnellen Runde (Mittelwert, ohne Neutralisierung); Startwert 1,5 × Basisrunde.
+- Qualifying/Sprint-Quali, Auto in der Garage: Hinweis „Out-Lap ca. m:ss · spätestens bei m:ss Restzeit rausfahren (noch m:ss)“
+  (8 s Reserve), 30 s vorher Funk + Toast, danach „Jetzt sofort raus!“ bzw. „Zu spät“.
