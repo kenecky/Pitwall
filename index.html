@@ -179,7 +179,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 24</div>
+      <div class="app-version">Version 25</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -191,6 +191,13 @@
   </div>
 
   <!-- Strategie-Übersicht nach dem Rennen -->
+  <div id="protestView" class="overlay hidden">
+    <div class="sheet">
+      <div class="sheet-head-x"><h2 class="sheet-title">⚖️ Rennleitung</h2><button id="protestClose" class="x-btn" aria-label="Schließen">✕</button></div>
+      <div id="protestBody"></div>
+    </div>
+  </div>
+
   <div id="stratView" class="overlay hidden">
     <div class="sheet">
       <h2 class="sheet-title">📊 Strategien</h2>

@@ -19,7 +19,7 @@ import { Sound } from './ui/sound.js';
 import { WeatherPanel } from './ui/weatherPanel.js';
 import { weatherLabel, createWeather } from './sim/weather.js';
 import { distanceFor, LENGTHS } from './sim/length.js';
-import { unservedSecs } from './control/stewards.js';
+import { unservedSecs, PENALTIES } from './control/stewards.js';
 import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, loadGame, clearGame } from './storage.js';
 import { serializeRace, restoreRace } from './sim/persist.js';
 import { newSeason, currentEntry, seasonOver, weekendParts, recordWeekend, driverStandings, teamStandings, finishOf, SPRINT_TRACKS } from './team/season.js';
@@ -43,8 +43,10 @@ import { radioStep, answer, openMessage, ownCall, OWN_CALLS, moodLabel } from '.
 import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
+import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
+import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 24;
+export const VERSION = 25;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -2005,6 +2007,7 @@ function showResults() {
     <table class="pw-res"><tbody>${rows}</tbody></table>
     ${mine.map(c => `<div class="pw-hist"><b>${c.id}</b> ${histHtml(c)}</div>`).join('')}
     <button class="secondary-btn pw-stratbtn" id="openStrat">📊 Strategien aller Fahrer</button>
+    ${protestCases(race).length ? `<button class="secondary-btn pw-stratbtn" id="openProtest">⚖️ Entscheidungen der Rennleitung (${protestCases(race).length})</button>` : ''}
     <div class="pw-label" style="margin-top:14px">PRESSESTIMMEN</div>
     ${pressQuotes(race, teamsNow()).map(p => `<div class="pw-press"><b>${esc(p.outlet)}</b>„${esc(p.text)}“</div>`).join('')}`;
   $('resultTitle').textContent = `🏁 ${race.kind === 'sprint' ? 'Sprint' : 'Rennen'} · ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
@@ -2013,7 +2016,66 @@ function showResults() {
     $('stratViewBody').innerHTML = strategyChart(race);
     $('stratView').classList.remove('hidden');
   };
+  if ($('openProtest')) $('openProtest').onclick = () => { protestUi = { caseId: null }; renderProtest(); $('protestView').classList.remove('hidden'); };
 }
+
+// ---------- Proteste nach dem Rennen ----------
+let protestUi = { caseId: null }, protestPlayer = null;
+const verdictText = c => {
+  const v = c.verdict;
+  if (!v) return 'noch offen';
+  if (c.status === 'nfa') return 'keine weitere Untersuchung';
+  return `${v.carId ? `${PENALTIES[v.penalty].name} für ${v.carId}${v.points ? ` (${v.points} Strafpkt.)` : ''}` : 'keine Strafe'}${v.revoked ? ' – aufgehoben' : ''}`;
+};
+function renderProtest() {
+  if (protestPlayer) { protestPlayer.destroy(); protestPlayer = null; }
+  const body = $('protestBody');
+  const list = protestCases(race);
+  const left = protestsLeft(race);
+  if (protestUi.caseId === null) {
+    body.innerHTML = `<div class="pw-hint">Entscheidungen, an denen deine Fahrer beteiligt waren. Du kannst ${MAX_PROTESTS} Mal pro Rennen Einspruch oder Protest einlegen (noch ${left}).</div>`
+      + list.map(({ c, kind, done }) => `<div class="pw-mcard"><b>DOC ${c.id} · ${esc(c.title)}</b><small>Runde ${c.lap} · ${esc(c.typeName)} · Urteil: <b>${esc(verdictText(c))}</b></small>
+        ${done ? `<div class="pw-qa ${done.verdict && done.verdict.penalty === 'keep' ? 'bad' : 'good'}">${esc(done.result || '')}</div>`
+          : kind === 'pending' ? '<small>Die Kommissare entscheiden noch …</small>'
+            : kind ? `<div class="pw-hqbtns"><button class="go" data-pcase="${c.id}" ${left > 0 ? '' : 'disabled'}>${kind === 'appeal' ? 'Einspruch einlegen' : 'Protest einlegen'}</button></div>` : '<small>Kein Einspruch nötig – keine Strafe gegen dein Team, kein Gegner beteiligt.</small>'}
+      </div>`).join('');
+    return;
+  }
+  const c = race.cases.find(x => x.id === protestUi.caseId);
+  const kind = protestKind(race, c);
+  const args = protestArgs(race, c, kind);
+  const sel = protestUi.sel || (protestUi.sel = []);
+  body.innerHTML = `<div class="pw-mcard"><b>DOC ${c.id} · ${esc(c.title)}</b><small>${esc(c.summary || '')}</small><small>Urteil: <b>${esc(verdictText(c))}</b></small></div>
+    ${c.scene ? '<div class="pw-label">SZENE</div><div id="protestScene"></div>' : ''}
+    ${(c.evidence || []).length ? `<div class="pw-label">BEWEISE</div>${c.evidence.map(e => `<div class="pw-ev"><b>${esc(e.label)}</b> ${esc(e.text)}</div>`).join('')}` : ''}
+    <div class="pw-label">${kind === 'appeal' ? 'EINSPRUCH' : 'PROTEST'} – WÄHLE BIS ZU 2 ARGUMENTE</div>
+    <div class="pw-args">${args.map(a => `<button data-parg="${a.key}" class="${sel.includes(a.key) ? 'on' : ''}">${esc(a.text)}</button>`).join('')}</div>
+    <div class="pw-hint">Die Kommissare entscheiden nach den Fakten. Passende Argumente helfen, unpassende schaden.</div>
+    <div class="sheet-actions"><button class="secondary-btn" data-pback="1">Zurück</button><button class="primary-btn" data-psend="1" ${sel.length ? '' : 'disabled'}>Bei der Rennleitung einreichen</button></div>`;
+  if (c.scene) protestPlayer = new ScenePlayer($('protestScene'), { track: race.track, scene: c.scene, sharp: true });
+}
+$('protestBody').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.pcase) { protestUi = { caseId: Number(b.dataset.pcase), sel: [] }; renderProtest(); $('protestBody').closest('.sheet').scrollTop = 0; }
+  else if (b.dataset.pback) { protestUi = { caseId: null }; renderProtest(); }
+  else if (b.dataset.parg) {
+    const sel = protestUi.sel, k = b.dataset.parg;
+    if (sel.includes(k)) sel.splice(sel.indexOf(k), 1); else { sel.push(k); if (sel.length > 2) sel.shift(); }
+    renderProtest();
+  } else if (b.dataset.psend) {
+    const c = race.cases.find(x => x.id === protestUi.caseId);
+    const res = fileProtest(race, c, protestKind(race, c), protestUi.sel);
+    const pc = race.cases.find(x => x.byPlayer && x.base === c.id);
+    if (pc) pc.result = res.text;
+    protestUi = { caseId: null };
+    toast(res.ok ? '⚖️ Protest erfolgreich!' : '⚖️ Abgelehnt', 2500);
+    renderProtest();
+    showResults();
+    autosave();
+  }
+});
+$('protestClose').addEventListener('click', () => { if (protestPlayer) { protestPlayer.destroy(); protestPlayer = null; } $('protestView').classList.add('hidden'); });
 function showSessionResults() {
   const st = race.standings();
   const best = st[0] && race.rankTime(st[0]);

@@ -414,3 +414,11 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Session misst die Dauer Garage → Start der schnellen Runde (Mittelwert, ohne Neutralisierung); Startwert 1,5 × Basisrunde.
 - Qualifying/Sprint-Quali, Auto in der Garage: Hinweis „Out-Lap ca. m:ss · spätestens bei m:ss Restzeit rausfahren (noch m:ss)“
   (8 s Reserve), 30 s vorher Funk + Toast, danach „Jetzt sofort raus!“ bzw. „Zu spät“.
+
+### v25 – Sektoren nach dem Start, Proteste nach dem Rennen
+- ZEITEN im Rennen: Sektorzeiten erst ab der ersten Überfahrt der Ziellinie (vorher kein falsches S3 mit 0,0xx).
+- Neu js/team/protest.js: nach Rennen/Sprint im Ergebnis „⚖️ Entscheidungen der Rennleitung“ – alle Fälle mit eigenen Fahrern
+  (ohne Reifenregel/Technik/Funk). Einspruch (eigener Fahrer bestraft) oder Protest (Gegner zu mild/nicht bestraft),
+  max. 2 pro Rennen. Ansicht mit Rennszene (ScenePlayer aus Race Control) und Beweisen, bis zu 2 Argumente wählen.
+  Erfolg nach Wahrheit des Falls + Argumenten (begründet & passendes Hauptargument ~85 %, nur Nebenargument ~55 %,
+  unpassend ~15 %, unbegründet ~3 %; falsche Argumente −12 % je Stück). Neues Urteil wirkt sofort auf die Wertung.

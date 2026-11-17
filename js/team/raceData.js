@@ -25,6 +25,8 @@ export function updateRaceData(race) {
     const tx = race.time - (c.move > 0 ? Math.min(DT, DT * over / c.move) : 0);
     const done = c.rIdx, t = tx - c.rStart;
     c.rIdx = idx; c.rStart = tx;
+    // Nach dem Start: erst ab der ersten Überfahrt der Ziellinie messen (der Startplatz liegt im letzten Sektor)
+    if (!c.rArm) { if (idx === 0) c.rArm = true; continue; }
     const sec = c.rSec || (c.rSec = [null, null, null]);
     if (c.rPit || race.neutral) { sec[done] = { t, st: 'n' }; c.rPit = c.inPit; continue; }   // Box/Neutralisierung: neutral
     c.rPit = c.inPit;
