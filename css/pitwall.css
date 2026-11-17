@@ -479,3 +479,4 @@
 .pw-args { display: flex; flex-direction: column; gap: 6px; }
 .pw-args button { text-align: left; padding: 10px 12px; border-radius: 10px; background: #232836; border: 2px solid #2f3546; color: #e6e9ef; font-size: 13px; line-height: 1.35; }
 .pw-args button.on { border-color: #ff6a3d; background: rgba(255,106,61,.14); color: #fff; }
+.pw-setup.locked { opacity: .35; filter: grayscale(1); pointer-events: none; }

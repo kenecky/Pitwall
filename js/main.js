@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 26;
+export const VERSION = 27;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -305,10 +305,14 @@ function resetUi() {
 function onGarage(car) {
   if (race.kind === 'fp' && settings.speed !== 1 && !ff) setSpeed(1);   // Training: zurück in der Box → 1×
   const laps = (car.runLaps || []).filter(l => l.valid);
-  if (race.kind === 'fp' && laps.length) {
+  const red = car.redAbort;
+  car.redAbort = false;
+  if (race.kind === 'fp' && (laps.length || red)) {
+    // Auch nach Abbruch durch Rote Flagge: Rückmeldung zum Setup (aus Aufwärm- und angefangenen Runden)
     const fb = feedback(race.track, wk.setup[car.id], car.driver, race.time + (wk.runs[car.id]++) * 7.3);
-    wk.notes[car.id].push({ text: fb.text, setup: { ...wk.setup[car.id] }, best: Math.min(...laps.map(l => l.time)), n: laps.length });
-    race.emit('radio', `Funk ${car.id}: „${fb.text}“`, { cars: [car.id], own: true });
+    const text = red ? `Abgebrochen wegen Roter Flagge. ${fb.text}` : fb.text;
+    wk.notes[car.id].push({ text, setup: { ...wk.setup[car.id] }, best: laps.length ? Math.min(...laps.map(l => l.time)) : null, n: laps.length });
+    race.emit('radio', `Funk ${car.id}: „${text}“`, { cars: [car.id], own: true });
   } else if (laps.length) {
     const b = Math.min(...laps.map(l => l.time));
     const pos = race.segmentRanking ? race.segmentRanking().indexOf(car) + 1 : 0;
@@ -1578,6 +1582,7 @@ function histHtml(car) {
 
 // ---------- Training / Qualifying: Ausfahrten, Verkehr, Setup ----------
 const RUN_PUSH = { fp: [1, 3, 5, 8], quali: [1, 2, 3], sq: [1, 2, 3] };
+const mate = car => playerCars(race).find(x => x !== car);
 function runCfg(car) {
   if (!ui.run[car.id]) ui.run[car.id] = { c: race.weather.wetness > 0.15 ? bestCompound(race.weather.wetness, 20) : race.kind === 'fp' ? 'M' : 'S', fresh: race.kind !== 'fp', push: race.kind === 'fp' ? 3 : 1, fuel: race.kind === 'fp' ? 'high' : 'low' };
   return ui.run[car.id];
@@ -1679,6 +1684,7 @@ function buildSessionWall() {
       <div class="pw-seg ers"><button data-auto="1">AUTO-PROGRAMM</button></div>
       <div class="pw-label">SCHNELLE RUNDEN${fp ? ' · SPRIT' : ''}</div>
       <div class="pw-seg">${RUN_PUSH[race.kind].map(n => `<button data-push="${n}">${n}</button>`).join('')}</div>
+      ${!fp && mate(c) ? `<div class="pw-label">AUFWÄRMRUNDE</div><div class="pw-seg ers"><button data-gap="1">FREIE FAHRT</button><button data-tow="1">WINDSCHATTEN VON ${mate(c).id}<small>~${fmt(race.towGain, 2)} s</small></button></div>` : ''}
       ${fp ? '<div class="pw-seg ers"><button data-fuel="low">WENIG SPRIT</button><button data-fuel="high">VIEL SPRIT</button><span></span></div>' : ''}
       <div class="pw-rejoin" data-f="traffic"></div>
       <button class="pw-boxbtn pw-go" data-act="go">RAUSFAHREN</button>
@@ -1760,6 +1766,8 @@ function renderSessionWall() {
     el.querySelector('[data-auto]').classList.toggle('on', Boolean(car.autoRuns));
     for (const b of el.querySelectorAll('[data-push]')) b.classList.toggle('on', Number(b.dataset.push) === cfg.push);
     for (const b of el.querySelectorAll('[data-fuel]')) b.classList.toggle('on', cfg.fuel === b.dataset.fuel);
+    for (const b of el.querySelectorAll('[data-gap]')) { b.classList.toggle('on', car.inGarage ? Boolean(cfg.gap) : Boolean(car.wantGap)); b.disabled = !car.inGarage; }
+    for (const b of el.querySelectorAll('[data-tow]')) { b.classList.toggle('on', car.inGarage ? Boolean(cfg.tow) : Boolean(car.towFrom)); b.disabled = !car.inGarage; }
     const set = runSet(car);
     const out = car.elimSeg !== null && car.elimSeg !== undefined;
     const tf = trafficForecast(car);
@@ -1808,11 +1816,12 @@ function renderSessionWall() {
       f('lock').textContent = `${lock}${est !== null ? ` · Ingenieure: Setup ~${est} %` : ''}`;
       for (const [k] of Object.entries(SETUP_KEYS)) el.querySelector(`[data-sv="${k}"]`).textContent = wk.setup[car.id][k];
       for (const b of el.querySelectorAll('[data-set]')) b.disabled = wk.setupLocked || !car.inGarage;
+      el.querySelector('.pw-setup').classList.toggle('locked', wk.setupLocked || !car.inGarage);
       const notes = wk.notes[car.id].slice(-4).reverse();
       const nsig = String(wk.notes[car.id].length);
       if (f('notes').dataset.sig !== nsig) {
         f('notes').dataset.sig = nsig;
-        f('notes').innerHTML = notes.length ? notes.map(n => `<div>„${esc(n.text)}“<small>Flügel ${n.setup.wing} · Balance ${n.setup.bal} · Federung ${n.setup.stiff} · ${n.n} Rd, beste ${formatLap(n.best)}</small></div>`).join('') : '<div>Noch keine Ausfahrt.</div>';
+        f('notes').innerHTML = notes.length ? notes.map(n => `<div>„${esc(n.text)}“<small>Flügel ${n.setup.wing} · Balance ${n.setup.bal} · Federung ${n.setup.stiff} · ${n.n ? `${n.n} Rd, beste ${formatLap(n.best)}` : 'keine gezeitete Runde'}</small></div>`).join('') : '<div>Noch keine Ausfahrt.</div>';
       }
     }
     // Ausgefallen: nichts mehr einstellbar
@@ -1837,14 +1846,27 @@ function sessionClick(e, b) {
   else if (b.dataset.push) cfg.push = Number(b.dataset.push);
   else if (b.dataset.fuel) cfg.fuel = b.dataset.fuel;
   else if (b.dataset.auto) race.setAutoRuns(car, !car.autoRuns);
+  else if (b.dataset.gap) { cfg.gap = !cfg.gap; if (cfg.gap) cfg.tow = false; }
+  else if (b.dataset.tow) { cfg.tow = !cfg.tow; if (cfg.tow) cfg.gap = false; }
   else if (b.dataset.set) {
     const k = b.dataset.set, d = SETUP_KEYS[k];
     wk.setup[car.id][k] = Math.max(d.min, Math.min(d.max, wk.setup[car.id][k] + Number(b.dataset.d)));
     applyWeekend(race, wk);
   } else if (b.dataset.act === 'go') {
     if (car.inGarage) {
-      const ok = race.playerRun(car, { compound: cfg.c, push: cfg.push, fuel: cfg.fuel === 'high' ? 0.7 : race.kind === 'fp' ? 0.15 : 0.05, set: runSet(car) });
-      if (ok) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Raus geht’s – ${cfg.push} schnelle Runde${cfg.push > 1 ? 'n' : ''} auf ${COMPOUNDS[cfg.c].name}.“`, { cars: [car.id], own: true });
+      const fuel = cfg.fuel === 'high' ? 0.7 : race.kind === 'fp' ? 0.15 : 0.05;
+      let tow = null;
+      if (cfg.tow && race.kind !== 'fp') {
+        // Windschatten: der Teamkollege fährt zuerst raus und zieht auf seiner schnellen Runde
+        const m = mate(car), mset = m && runSet(m);
+        if (m && m.inGarage && !m.retired && (m.elimSeg === null || m.elimSeg === undefined) && mset
+          && race.playerRun(m, { compound: runCfg(m).c, push: 1, fuel: 0.05, set: mset })) {
+          tow = m.id;
+          race.emit('radio', `Teamfunk ${car.team.name} an ${m.id}: „Du fährst vor und gibst ${car.id} Windschatten.“`, { cars: [m.id], own: true });
+        } else toast(`${m ? m.id : 'Teamkollege'} kann gerade nicht – ${car.id} fährt ohne Windschatten.`, 3000);
+      }
+      const ok = race.playerRun(car, { compound: cfg.c, push: cfg.push, fuel, set: runSet(car), delay: tow ? 3 : 0, tow, gap: Boolean(cfg.gap) && race.kind !== 'fp' });
+      if (ok) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Raus geht’s – ${cfg.push} schnelle Runde${cfg.push > 1 ? 'n' : ''} auf ${COMPOUNDS[cfg.c].name}${tow ? `, hol dir den Windschatten von ${tow}` : cfg.gap ? ', mach dir auf der Aufwärmrunde Platz nach vorne' : ''}.“`, { cars: [car.id], own: true });
     } else if (car.prog.phase === 'cool' && car.boxInPrev) {
       if (race.playerCancelBoxIn(car)) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Sorry, bleib draußen – weiter wie geplant.“`, { cars: [car.id], own: true });
     } else if (race.playerBoxIn(car)) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Box, box – komm rein.“`, { cars: [car.id], own: true });

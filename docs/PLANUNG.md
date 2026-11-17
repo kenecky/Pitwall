@@ -426,3 +426,15 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 ### v26 – Training: 1× bei Rückkehr in die Box, Rote-Flagge-Banner
 - Training: kommt ein eigener Fahrer in die Garage, schaltet das Tempo auf 1×.
 - Banner bei roter Flagge in Training/Qualifying/Sprint-Quali: „ROTE FLAGGE – Session unterbrochen“ (Reifenhinweis nur Rennen/Sprint).
+
+### v27 – Rote Flagge im Training, Setup gesperrt, Windschatten und freie Fahrt im Qualifying
+- Rote Flagge in Sessions: laufende Ausfahrt wird abgebrochen (pushLeft 0); nach der Freigabe bekommen nur KI-Autos bzw.
+  eigene mit Auto-Programm einen Ersatz-Run (vorher fuhren eigene Fahrer ungefragt wieder raus).
+- Training: nach Abbruch durch Rot gibt der Fahrer trotzdem Setup-Rückmeldung („Abgebrochen wegen Roter Flagge. …“).
+- Training: Setup-Bereich ausgegraut, solange das Auto draußen ist.
+- Qualifying/Sprint-Quali, Bereich AUFWÄRMRUNDE:
+  - FREIE FAHRT: Fahrer lässt auf der Aufwärmrunde ~5 s Lücke zum Vordermann (Monza-Test, 12 Läufe: Ø −0,26 s,
+    Verkehr auf der schnellen Runde 29 s → 6 s; Out-Lap etwas länger, etwas höheres Risiko „zu langsam“).
+  - WINDSCHATTEN VON <Teamkollege>: Teamkollege fährt zuerst raus (1 schnelle Runde), eigener Fahrer folgt mit ~1 s Abstand.
+    Gewinn je Strecke aus dem Geradenanteil (session.towGain: Monza ~0,3 s, Monaco 0). Klappt nicht immer
+    (Autos dazwischen, zu dicht = verwirbelte Luft). Monza-Test: Ø −0,14 s, gelungene Tows bis −1 s.

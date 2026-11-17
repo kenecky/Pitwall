@@ -8,6 +8,7 @@ import { sessionDurations } from './length.js';
 import { rollPitQueue, rollSlowOutlap, rollOutlapPass } from './cases2.js';
 import { rollParcFerme } from './regs.js';
 import { prepareScrutiny } from './scrutiny.js';
+import { isStraight } from './energy.js';
 
 export const SESSION_INFO = {
   fp:    { name: 'Freies Training',   short: 'FP', segments: [{ id: 'FP', dur: 1200 }] },
@@ -57,7 +58,7 @@ export class Session extends Race {
     this.neutralStats.red++;
     for (const c of this.cars) {
       c.pass = null;
-      if (!c.inGarage && c.prog.phase !== 'garage') c.prog.phase = 'cool';
+      if (!c.inGarage && c.prog.phase !== 'garage') { c.prog.phase = 'cool'; c.prog.pushLeft = 0; c.redAbort = true; c.boxInPrev = null; }
     }
     this.emit('rc', `ROTE FLAGGE – ${this.info.name} unterbrochen, die Uhr steht. Alle Autos in die Box.`);
     return true;
@@ -84,7 +85,8 @@ export class Session extends Race {
         c.prog.runs[i].depart = Math.max(c.prog.runs[i].depart, this.clock + this.rng.range(15, 90));
       }
       // Wer durch Rot einen Versuch verloren hat, bekommt einen neuen (sofern Zeit bleibt)
-      if (c.prog.runIdx >= c.prog.runs.length && c.elimSeg === null && !c.retired && this.remaining > 150) {
+      // (eigene Autos nur mit Auto-Programm – sonst entscheidet der Teamchef selbst)
+      if (c.prog.runIdx >= c.prog.runs.length && c.elimSeg === null && !c.retired && this.remaining > 150 && (!c.player || c.autoRuns)) {
         c.prog.runs.push({ depart: this.clock + this.rng.range(20, 80), push: 1, compound: 'S', fuel: 0.05 });
       }
     }
@@ -178,9 +180,10 @@ export class Session extends Race {
 
   // ---------- Pit Wall: Befehle für eigene Autos ----------
   // Sofort rausfahren mit gewählter Mischung, Anzahl schneller Runden und Sprit
-  playerRun(car, { compound = 'S', push = 1, fuel = 0.1, set = null } = {}) {
+  // tow: ID des Teamkollegen, der Windschatten gibt · gap: Abstand zum Vordermann aufbauen (freie Fahrt)
+  playerRun(car, { compound = 'S', push = 1, fuel = 0.1, set = null, delay = 0, tow = null, gap = false } = {}) {
     if (!car.inGarage || car.retired || car.elimSeg !== null || this.segFlag || this.segState !== 'run' || (this.neutral && this.neutral.type === 'red')) return false;
-    car.prog.runs.splice(car.prog.runIdx, 0, { depart: this.clock, push, compound, fuel });
+    car.prog.runs.splice(car.prog.runIdx, 0, { depart: this.clock + delay, push, compound, fuel, tow, gap });
     car.nextSet = set;
     return true;
   }
@@ -286,13 +289,17 @@ export class Session extends Race {
     const on = this.cars.filter(c => !c.retired && !c.inPit && !c.inGarage);
     for (const c of on) {
       c.dirty = false;
-      if (c.prog.phase !== 'push') continue;
-      let best = Infinity;
+      c.tow = false;
+      let best = Infinity, ahead = null;
       for (const o of on) {
         if (o === c) continue;
         const g = ((o.d - c.d) % L + L) % L;
-        if (g < best) best = g;
+        if (g < best) { best = g; ahead = o; }
       }
+      c.aheadGap = best; c.aheadId = ahead ? ahead.id : null;
+      if (c.prog.phase !== 'push') continue;
+      // Windschatten vom Teamkollegen: im richtigen Abstand kein Nachteil, sondern Gewinn auf den Geraden
+      if (c.towFrom && ahead && ahead.id === c.towFrom && best >= c.v * 0.3 && best <= c.v * 2.2) { c.tow = true; continue; }
       if (best < Math.max(40, c.v * 1.2)) { c.dirty = true; c.trafficT = (c.trafficT || 0) + DT; }
     }
   }
@@ -355,8 +362,29 @@ export class Session extends Race {
     return this.outLapAvg || this.track.baseLap * OUTLAP_RATIO;
   }
 
+  // Wert des Windschattens je Strecke (s pro Runde): viele lange Geraden → viel (Monza ~0,35), Monaco ~0
+  get towGain() {
+    if (this._towGain === undefined) {
+      const tr = this.track;
+      let fast = 0, n = 0;
+      for (let i = 0; i < tr.N; i += 4) { n++; if (isStraight(tr, i * tr.ds)) fast++; }
+      this._towGain = Math.round(Math.max(0, fast / n - 0.3) * 100) / 100;
+    }
+    return this._towGain;
+  }
+
   programFactor(car) {
     const ph = car.prog && car.prog.phase;
+    if (ph === 'out' && !car.inPit && (car.towFrom || car.wantGap)) {
+      const v = Math.max(55, car.v), g = car.aheadGap ?? Infinity;
+      if (car.towFrom) {
+        // hinter dem Teamkollegen etwa 1 s Abstand halten
+        const mate = this.carById[car.towFrom];
+        if (mate && !mate.inGarage && !mate.inPit && car.aheadId === mate.id) return g < v * 0.8 ? 0.7 : g > v * 1.4 ? 0.92 : 0.82;
+        return 0.86;
+      }
+      return g < v * 5.5 ? 0.62 : 0.82;   // freie Fahrt: Lücke zum Vordermann aufmachen (~5 s)
+    }
     if (ph === 'out') return 0.82;
     if (ph === 'cool') return 0.72;
     return 1;
@@ -368,7 +396,7 @@ export class Session extends Race {
     const progress = Math.min(1, Math.max(0, car.d / (this.laps * this.track.L)));
     // Streckenentwicklung: Gummi auf der Strecke (Q1 → Q3 immer schneller, Regen wäscht ihn ab)
     const evolution = -(this.kind === 'fp' ? 0.6 : 0.9) * (this.rubber || 0);
-    return base - 2.2 * (1 - progress) + 2.2 * (car.fuel ?? 0.2) + evolution + (car.dirty ? 0.4 : 0);
+    return base - 2.2 * (1 - progress) + 2.2 * (car.fuel ?? 0.2) + evolution + (car.dirty ? 0.4 : 0) - (car.tow ? this.towGain : 0);
   }
 
   // Autos auf Aufwärm-/Auslaufrunde lassen Autos auf schneller Runde vorbei – meistens
@@ -407,6 +435,7 @@ export class Session extends Race {
     car.prog.phase = 'garage';
     car.boxInPrev = null;
     car.pass = null;
+    car.towFrom = null; car.wantGap = false; car.tow = false;
     if (car.player && this.onPlayerGarage) this.onPlayerGarage(car);
   }
 
@@ -424,10 +453,13 @@ export class Session extends Race {
     car.stopTimer = 0;
     car.stoppedThisVisit = true;
     car.prog.phase = 'out';
+    car.towFrom = run.tow || null;
+    car.wantGap = Boolean(run.gap);
     car.outStartD = car.d;
     car.outT0 = this.time;
     rollPitQueue(this, car);
     rollSlowOutlap(this, car);   // Aufwärmrunde zählt erst ab einer vollen Runde
+    if (run.gap || run.tow) rollSlowOutlap(this, car);   // wer Abstand sucht, fährt öfter zu langsam
     rollOutlapPass(this, car);
     car.prog.pushLeft = run.push;
     car.compromised = false;
