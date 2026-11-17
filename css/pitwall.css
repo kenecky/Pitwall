@@ -432,6 +432,7 @@
 .pw-dtabs button span .pw-tyre { vertical-align: 0 !important; flex: none; }
 .pw-dtabs button span .secs { margin-left: 2px; }
 .pw-dtabs button span .secs i { width: 7px; height: 11px; }
+.pw-dtabs button span .tabph { margin-left: 3px; font-size: 10px; letter-spacing: .5px; color: #fbbf24; }
 .pw-qa { margin-top: 6px; padding: 7px 9px; border-radius: 8px; background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.35); font-size: 12px; line-height: 1.4; color: #dbeafe; }
 .pw-qa.good { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.45); color: #dcfce7; }
 .pw-qa.warn { background: rgba(250,204,21,.1); border-color: rgba(250,204,21,.45); color: #fef9c3; }

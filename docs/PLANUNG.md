@@ -394,3 +394,7 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - **Strategie-Übersicht** nach Rennen und Sprint (Knopf im Ergebnis): je Fahrer (nach Ergebnis sortiert) Balken in Reifenfarbe,
   Länge = Runden des Stints, Stopp-Runde an den Übergängen, rechts Gesamtrunden bzw. DNF. Daten: `js/team/raceData.js`
   (Stints und Sektoren aller Autos, nur Anzeige).
+
+### v21 – Aufräumen Teamzentrale, OUT/IN im Reiter
+- Buchungsliste unter der Teamzentrale entfernt (steht in Finanzen und in der Abrechnung nach dem Rennen).
+- Fahrer-Reiter in Training/Qualifying: in der Out-Lap „OUT“, in der In-Lap „IN“ statt der Sektor-Quadrate.

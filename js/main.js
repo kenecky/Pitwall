@@ -44,7 +44,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 20;
+export const VERSION = 21;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -514,7 +514,6 @@ function renderHQ() {
     const nx = nextEvent(season, SEASON_2026, trackLabel);
     if (nx) h += `<div class="pw-mcard pw-next"><small>NÄCHSTER TERMIN</small><b>${calIcon(nx)} ${fmtDate(nx.date, true)}</b><span>${esc(nx.text)}</span></div>`;
     h += `<div class="pw-tiles">${HQ_SECTIONS.map(([k, ic, n]) => { const [st, cls] = tileStatus(k); return `<button class="pw-tile" data-go="${k}"><span class="ic">${ic}</span><b>${n}</b><small class="${cls}">${st}</small></button>`; }).join('')}</div>`;
-    if (m.report && m.report.log && m.phase !== 'preseason') h += `<div class="pw-label">BUCHUNGEN NACH RENNEN ${m.report.round}</div><table class="pw-res"><tbody>${m.report.log.map(l => `<tr><td>${esc(l.what)}</td><td style="text-align:right" class="${l.amount < 0 ? 'neg' : 'pos'}">${l.amount > 0 ? '+' : ''}${money(l.amount)}</td></tr>`).join('')}</tbody></table>`;
   } else if (hqTab === 'sponsors' && m.nego) {
     h = negoHtml(m.nego);
   } else if (hqTab === 'sponsors') {
@@ -1608,6 +1607,9 @@ const tyreLaps = car => (car.curSet && car.curSet.lapCount !== undefined ? car.c
 // Sektor-Quadrate im Reiter (wie in ZEITEN)
 function tabSecs(car) {
   if (!car.prog) return '';
+  if (car.inGarage) return '';
+  if (car.prog.phase === 'out') return '<b class="tabph">OUT</b>';
+  if (car.prog.phase !== 'push' && !car.lastSecs) return '<b class="tabph">IN</b>';
   const list = car.prog.phase === 'push' ? (car.curSecs && car.curSecs.length ? car.curSecs : car.lastSecs || []) : car.lastSecs || [];
   return `<span class="secs">${[0, 1, 2].map(k => `<i class="${list[k] || ''}"></i>`).join('')}</span>`;
 }
