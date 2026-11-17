@@ -398,3 +398,9 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 ### v21 – Aufräumen Teamzentrale, OUT/IN im Reiter
 - Buchungsliste unter der Teamzentrale entfernt (steht in Finanzen und in der Abrechnung nach dem Rennen).
 - Fahrer-Reiter in Training/Qualifying: in der Out-Lap „OUT“, in der In-Lap „IN“ statt der Sektor-Quadrate.
+
+### v22 – Setup ohne Training, Q-Fix, Wetter-Kopf, Aufwärmen in der Out-Lap
+- Ohne Training: Setup der eigenen Autos auf KI-Niveau (wk.autoSetup).
+- Qualifying: KI bleibt nie in der Box, wenn sie unter dem Strich steht (vorher seltener Zufall möglich).
+- Fenster mit X-Kopfzeile (Wetter u. a.): Kopf bleibt beim Scrollen stehen.
+- Qualifying-Out-Lap: Autos fahren Schlangenlinien zum Reifenaufwärmen (seltener als in der Formationsrunde).

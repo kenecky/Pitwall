@@ -25,6 +25,7 @@ export function createWeekend({ parts, seed, trackId, carIds }) {
     setup: {}, notes: {}, runs: {}, sets: {},
     grid: { race: null, sprint: null }, penalties: { race: {}, sprint: {} },
     results: {}, setupLocked: false, alloc, sprintWk, returned: {},
+    autoSetup: !set.has('fp'),   // ohne Training stellt das Team ein Setup auf KI-Niveau ein
   };
   let n = 0;
   for (const id of carIds) {
@@ -115,7 +116,7 @@ export function setupFor(wk, track, carId, wet = 0) {
 export function applyWeekend(race, wk) {
   const wet = race.weather ? Math.min(1, race.weather.wetness) : 0;
   for (const c of race.cars) {
-    if (c.player && wk.setup[c.id]) {
+    if (c.player && wk.setup[c.id] && !wk.autoSetup) {
       const e = setupFor(wk, race.track, c.id, wet);
       c.setupDt = e.dt;
       c.setupWear = e.wear;

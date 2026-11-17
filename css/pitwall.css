@@ -470,3 +470,6 @@
 .sc-seg.S { background: #ef4444; } .sc-seg.M { background: #facc15; } .sc-seg.H { background: #f1f4f8; } .sc-seg.I { background: #22c55e; } .sc-seg.W { background: #3b82f6; }
 .sc-seg b { position: absolute; right: 0; top: 50%; transform: translate(50%, -50%); z-index: 1; padding: 0 2px; border-radius: 3px; background: #1b1f2a; font: 800 9.5px var(--mono); color: #fff; }
 .sc-end { text-align: right; font: 700 10.5px var(--mono); color: #aab0bf; }
+/* v22: Kopfzeile mit X bleibt beim Scrollen stehen */
+.sheet > .sheet-head-x { position: sticky; top: -22px; z-index: 5; margin: -22px -18px 10px; padding: 16px 18px 10px; background: #1b1f2a; border-bottom: 1px solid rgba(255,255,255,.08); }
+.sheet > .sheet-head-x .sheet-title { margin: 0; }

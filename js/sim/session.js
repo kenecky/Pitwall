@@ -224,6 +224,7 @@ export class Session extends Race {
     if (!mine) return false;
     const rk = this.segmentRanking();
     const pos = rk.indexOf(c) + 1;
+    if (pos < 1 || pos > seg.keep) return false;   // unter dem Strich: immer noch mal raus
     const cut = rk[seg.keep - 1];
     const cutT = cut && cut.segBest && cut.segBest[this.segIdx];
     const timed = rk.filter(x => x.segBest && x.segBest[this.segIdx] !== undefined).length;
