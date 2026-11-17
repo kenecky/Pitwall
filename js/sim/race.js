@@ -886,6 +886,7 @@ export class Race {
       car.lapStart = tLine;
       car.lastLap = lapTime;
       car.tyreAge++;
+      if (car.curSet && !car.inPit) car.curSet.lapCount = (car.curSet.lapCount || 0) + 1;   // Pit Wall: Runden je Reifensatz
       car.lapNoise = this.newLapNoise(car);
       if (this.isSession) { this.onSessionLap(car, lapTime, prev); return; }
       if (car.bestLap === null || lapTime < car.bestLap) car.bestLap = lapTime;

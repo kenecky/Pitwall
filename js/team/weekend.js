@@ -98,6 +98,7 @@ export function tyreHook(race, wk, car) {
   car.curSet = set;
   if (!set) return;
   set.base = set.laps;
+  if (set.lapCount === undefined) set.lapCount = Math.round(set.laps);   // gefahrene Runden auf diesem Satz (gesamt)
   car.tyreWear = set.laps / w;
 }
 // Laufend: gefahrene Runden auf dem montierten Satz (in Runden der vollen Distanz)

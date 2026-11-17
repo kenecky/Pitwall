@@ -42,7 +42,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 18;
+export const VERSION = 19;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -1342,7 +1342,7 @@ function renderWall() {
     tab.classList.toggle('on', car.id === ui.wallCar);
     const tmsg = openMessage(race, car);
     const tpos = car.retired ? 'OUT' : `P${st.indexOf(car) + 1}`;
-    const tyreTab = car.retired ? '' : ` · <i class="pw-tyre ${car.compound}">${car.compound}</i> ${car.tyreAge} Rd`;
+    const tyreTab = car.retired ? '' : ` · <i class="pw-tyre ${car.compound}">${car.compound}</i> ${tyreLaps(car)} Rd`;
     tab.querySelector('span').innerHTML = `${tpos}${tyreTab}${tmsg ? ' <i class="pw-dot">📻</i>' : ''}${car.redQueued && !car.redTyre ? ' <i class="pw-dot red">REIFEN?</i>' : ''}`;
     // Rote Flagge: Reifenwahl in der Boxengasse
     const red = el.querySelector('[data-f="red"]');
@@ -1378,7 +1378,7 @@ function renderWall() {
     const life = tyreLife(race, car);
     f('life').style.width = `${life}%`;
     f('life').style.background = lifeCol(life);
-    f('meta').innerHTML = `<b>${life}%</b> · ${car.tyreAge} Rd · ${car.stops} St`;
+    f('meta').innerHTML = `<b>${life}%</b> · ${tyreLaps(car)} Rd · ${car.stops} St`;
     const hs = (car.stintLog || []).map(x => x.c + x.laps).join('|');
     if (f('hist').dataset.sig !== hs) { f('hist').dataset.sig = hs; f('hist').innerHTML = `<span class="pw-hl">REIFEN BISHER</span>${histHtml(car)}`; }
     // Tempo mit Reifen-Runden je Stufe
@@ -1513,7 +1513,11 @@ $('wall').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b || b.disabled || !race) return;
   sound.unlock();
-  if (b.dataset.wtab) { ui.wallCar = b.dataset.wtab; renderWall(); $('panel-wall').scrollTop = 0; return; }
+  if (b.dataset.wtab) {
+    ui.wallCar = b.dataset.wtab;
+    map.startFollow(b.dataset.wtab);   // Karte folgt dem gewählten Fahrer (mittig), „Gesamt“ beendet das
+    renderWall(); $('panel-wall').scrollTop = 0; return;
+  }
   if (race.isSession) { sessionClick(e, b); return; }
   if (b.dataset.order) {
     if (b.dataset.order === 'swap') { const r = swapCars(race); ui.orderMsg = r.ok ? '' : r.why; }
@@ -1591,6 +1595,9 @@ function trafficForecast(car) {
   const score = outlap + soon * 0.8 + onTrack * 0.15;
   return { level: score < 2.5 ? 'niedrig' : score < 5 ? 'mittel' : 'hoch', cls: score < 2.5 ? 'free' : score < 5 ? 'mid' : 'traffic', outlap, soon, onTrack };
 }
+// Runden auf dem montierten Reifensatz insgesamt (über alle Sessions des Wochenendes)
+const tyreLaps = car => (car.curSet && car.curSet.lapCount !== undefined ? car.curSet.lapCount : car.tyreAge);
+
 // Sektor-Quadrate im Reiter (wie in ZEITEN)
 function tabSecs(car) {
   if (!car.prog) return '';
@@ -1683,7 +1690,7 @@ function renderSessionWall() {
     const i = st.indexOf(car);
     const tab = $('wall').querySelector(`[data-wtab="${car.id}"]`);
     tab.classList.toggle('on', car.id === ui.wallCar);
-    tab.querySelector('span').innerHTML = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? 'Garage' : `<i class="pw-tyre ${car.compound}">${car.compound}</i> ${car.tyreAge} Rd ${tabSecs(car)}`}`;
+    tab.querySelector('span').innerHTML = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? 'Garage' : `<i class="pw-tyre ${car.compound}">${car.compound}</i> ${tyreLaps(car)} Rd ${tabSecs(car)}`}`;
     // Renningenieur im Qualifying: reicht die Zeit für den nächsten Abschnitt?
     const qa = qualiAssess(car);
     const qel = f('qa');
@@ -2171,7 +2178,8 @@ $('labelsBtn').addEventListener('click', () => {
   $('labelsBtn').classList.toggle('active', settings.showLabels);
 });
 $('labelsBtn').classList.toggle('active', Boolean(settings.showLabels));
-$('zoomResetBtn').addEventListener('click', () => map.resetView());
+// „Gesamt“: Verfolgen beenden und ganze Strecke zeigen
+$('zoomResetBtn').addEventListener('click', () => { if (map.follow) map.stopFollow(); else map.resetView(); map.selected = null; });
 function applyTower() {
   $('tower').classList.toggle('hidden', !settings.showTower);
   $('towerBtn').classList.toggle('active', settings.showTower);

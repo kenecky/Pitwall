@@ -374,3 +374,11 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Bei „raus“/„reicht nicht“ zusätzlich Funkton und Hinweis.
 - **Fehler behoben**: Sprint-Ergebnis zeigte Rennpunkte (25-18-15 …). Jetzt 8-7-6-5-4-3-2-1 für die ersten 8 (Einzelrennen
   und Saison; die Saisonwertung rechnete schon richtig, nur die Anzeige im Ergebnis war falsch).
+
+### v19 – Zeiten-Reset in der Pause, Reifenrunden gesamt, Fahrer verfolgen
+- Qualifying/Sprint-Qualifying: Sobald die Pause nach einem Abschnitt beginnt, werden Zeiten und Abstände (Konsole, ZEITEN,
+  Tower) sowie die Sektor-Quadrate zurückgesetzt; Reihenfolge bleibt bis zum nächsten Abschnitt.
+- Reifenrunden im Fahrer-Reiter und auf der Karte des Fahrers = Runden auf dem Reifensatz insgesamt (über alle Sessions des
+  Wochenendes, `set.lapCount`), nicht nur im aktuellen Stint. Simulierte Sätze starten mit ihren simulierten Runden.
+- Fahrer-Reiter antippen: Karte folgt dem Fahrer durchgehend und hält ihn mittig; „⤢ Gesamt“ beendet das Verfolgen und zeigt
+  wieder die ganze Strecke.

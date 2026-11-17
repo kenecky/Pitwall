@@ -471,6 +471,8 @@ export class Session extends Race {
       out.forEach(c => { if (c.elimSeg === null) c.elimSeg = this.segIdx; });
       this.emit('rc', `Ausgeschieden in ${seg.id}: ${out.map(c => c.id).join(', ')}`);
       this.segState = 'break';
+      this.bestSec = [Infinity, Infinity, Infinity];
+      for (const c of this.cars) { c.pbSec = [Infinity, Infinity, Infinity]; c.lastSecs = null; c.curSecs = []; }
       this.breakLeft = this.info.brk ?? 420;
       this.breakRunning = false;
       this.emit('info', `Pause – die Pausenzeit läuft, sobald alle Autos zurück in der Box sind.`);
@@ -503,6 +505,7 @@ export class Session extends Race {
   // Abstand zur Bestzeit des Vorausliegenden in der Wertung
   gap(car, ref) {
     if (!ref || car === ref) return null;
+    if (this.segState === 'break' && this.kind !== 'fp') return null;
     const seg = this.kind === 'fp' ? null : (car.elimSeg === null ? this.segIdx : car.elimSeg);
     const tc = seg === null ? car.bestLap : car.segBest && car.segBest[seg];
     const tr = seg === null ? ref.bestLap : ref.segBest && ref.segBest[seg];
@@ -513,6 +516,7 @@ export class Session extends Race {
   // Maßgebliche Zeit für die Wertung (im Qualifying: Bestzeit im letzten erreichten Abschnitt)
   rankTime(car) {
     if (this.kind === 'fp') return car.bestLap;
+    if (this.segState === 'break' && (car.elimSeg === null || car.elimSeg === undefined)) return null;   // Pause: Zeiten zurückgesetzt
     const seg = car.elimSeg === null ? this.segIdx : car.elimSeg;
     return car.segBest && car.segBest[seg] !== undefined ? car.segBest[seg] : null;
   }
