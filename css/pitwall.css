@@ -484,3 +484,5 @@
 .pw-debrief .pw-setup { margin-top: 8px; }
 .pw-cmp.locked, .pw-sets.locked { opacity: .35; filter: grayscale(1); pointer-events: none; }
 .pw-wxbtn { width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+/* v31: Fenster aus dem Ergebnis liegen über dem Ergebnis */
+#stratView, #protestView { z-index: 20; }

@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 30;
+export const VERSION = 31;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };

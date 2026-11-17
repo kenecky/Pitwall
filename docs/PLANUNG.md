@@ -472,3 +472,7 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Training/Qualifying/Sprint-Quali: Mischung und Reifensatz nur wählbar, wenn das Auto in der Box steht (sonst ausgegraut).
 - Strategiebesprechung vor Sprint/Rennen: Wetterzeile (Vorhersage für die Renndauer), Antippen öffnet Wetter mit Regenradar
   und Vorhersage der weiteren Sessions.
+
+### v31 – Fix: Strategie-Übersicht und Rennleitung öffnen sich sichtbar
+- #stratView und #protestView lagen im DOM vor dem Ergebnisfenster (gleicher z-index) und öffneten sich dahinter –
+  sichtbar erst, wenn das Ergebnis geschlossen wurde. Jetzt z-index 20.
