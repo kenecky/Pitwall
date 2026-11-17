@@ -465,3 +465,10 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Hängt der Teamkollege vor der Geraden >4 s dicht dahinter, lässt der Geber ihn vorbei (Windschatten abgebrochen).
 - Test je 12× Q1: Las Vegas 12/12 gelungen (Ø −0,45 s), Monza 9/12 (Ø −0,42 s), Mexiko 5/12 (Ø −0,07 s; Gerade direkt
   nach der Ziellinie ist schwer zu treffen). KI auf Strecken ab 0,12 s.
+
+### v30 – Teamkollegen nie Verkehr, Reifenwahl nur in der Box, Wetter in der Strategiebesprechung
+- Grundregel (alle Teams): Teamkollege auf Aufwärm-/Auslaufrunde zählt für eine schnelle Runde nie als Verkehr und macht
+  immer Platz (kein Behinderungsrisiko). Ausnahme: Windschatten-Geber.
+- Training/Qualifying/Sprint-Quali: Mischung und Reifensatz nur wählbar, wenn das Auto in der Box steht (sonst ausgegraut).
+- Strategiebesprechung vor Sprint/Rennen: Wetterzeile (Vorhersage für die Renndauer), Antippen öffnet Wetter mit Regenradar
+  und Vorhersage der weiteren Sessions.

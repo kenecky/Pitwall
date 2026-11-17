@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 29;
+export const VERSION = 30;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -1787,6 +1787,8 @@ function renderSessionWall() {
     const chosen = runSet(car);
     const ssig = `${chosen ? chosen.id : 0}|${wk.sets[car.id].map(x => Math.round(x.laps)).join(',')}|${car.inGarage}`;
     if (f('sets').dataset.sig !== ssig) { f('sets').dataset.sig = ssig; f('sets').innerHTML = setChips(car, chosen ? chosen.id : 0); }
+    f('cmp').classList.toggle('locked', !car.inGarage);   // Reifen nur in der Box wählbar
+    f('sets').classList.toggle('locked', !car.inGarage);
     el.querySelector('[data-auto]').classList.toggle('on', Boolean(car.autoRuns));
     for (const b of el.querySelectorAll('[data-push]')) b.classList.toggle('on', Number(b.dataset.push) === cfg.push);
     for (const b of el.querySelectorAll('[data-fuel]')) b.classList.toggle('on', cfg.fuel === b.dataset.fuel);
@@ -1866,6 +1868,7 @@ function sessionClick(e, b) {
   if (!el) return;
   const car = race.carById[el.dataset.car];
   const cfg = runCfg(car);
+  if ((b.dataset.rc || b.dataset.setid) && !car.inGarage) return;
   if (b.dataset.rc) { cfg.c = b.dataset.rc; cfg.setId = null; }
   else if (b.dataset.setid) { const st = wk.sets[car.id].find(x => x.id === Number(b.dataset.setid)); if (st) { cfg.c = st.c; cfg.setId = st.id; } }
   else if (b.dataset.push) cfg.push = Number(b.dataset.push);
@@ -2001,11 +2004,14 @@ function renderStrategy() {
   const cars = playerCars(race);
   const who = wk.strategist || STRATEGISTS[cars[0].team.id];
   const tyres = s => [s.start, ...s.stops.map(x => x.compound)].map((k, i) => `${i ? `<span>R${s.stops[i - 1].lap}</span>` : ''}<span class="pw-tyre ${k}">${k}</span>`).join('');
+  const w = weatherText({ wx: race.weather, dur: race.laps * race.track.baseLap * 1.05 });
   $('stratBody').innerHTML = `<div class="pw-sum">Rennstratege <b>${esc(who)}</b> hat zwei Varianten je Fahrer gerechnet (${race.laps} Runden, Boxenverlust ~${fmt(pitLoss(race, cars[0]))} s).</div>`
+    + `<button class="pw-wxrow pw-wxbtn" data-wx="1"><span class="ic">${w.icon}</span><div><b>Wetter im ${race.kind === 'sprint' ? 'Sprint' : 'Rennen'}: ${w.main}</b><small>${w.sub} · Antippen für Regenradar</small></div></button>`
     + cars.map((c, n) => `<div class="pw-strat" style="--tc:${c.team.color}"><h3><span class="pw-snum">${n + 1}</span>${esc(c.driver.first)} ${esc(c.driver.last)} <small>#${c.driver.number} · Startplatz ${c.gridPos}</small></h3>
       ${stratOpts[c.id].map(s => `<button class="pw-opt${stratPick[c.id] === s.key ? ' on' : ''}" data-car="${c.id}" data-k="${s.key}"><b>${s.key} · ${esc(s.name)}</b><div class="tyres">${tyres(s)}</div><div>${esc(s.note)}</div></button>`).join('')}</div>`).join('');
 }
 $('stratBody').addEventListener('click', e => {
+  if (e.target.closest('[data-wx]')) { showWeather(); return; }
   const b = e.target.closest('[data-k]');
   if (!b) return;
   stratPick[b.dataset.car] = b.dataset.k;

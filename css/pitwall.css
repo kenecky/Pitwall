@@ -482,3 +482,5 @@
 .pw-setup.locked { opacity: .35; filter: grayscale(1); pointer-events: none; }
 .pw-debrief .pw-notes i { font-style: normal; font: 700 10px var(--mono); color: #ff8a5c; margin-right: 4px; }
 .pw-debrief .pw-setup { margin-top: 8px; }
+.pw-cmp.locked, .pw-sets.locked { opacity: .35; filter: grayscale(1); pointer-events: none; }
+.pw-wxbtn { width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; }

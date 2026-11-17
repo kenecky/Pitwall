@@ -313,6 +313,8 @@ export class Session extends Race {
       let best = Infinity, ahead = null;
       for (const o of on) {
         if (o === c) continue;
+        // Grundregel: Teamkollege auf Aufwärm-/Auslaufrunde ist für eine schnelle Runde nie Verkehr (außer beim Windschatten)
+        if (c.prog.phase === 'push' && o.team === c.team && o.prog.phase !== 'push' && !this.givesTow(o)) continue;
         const g = ((o.d - c.d) % L + L) % L;
         if (g < best) { best = g; ahead = o; }
       }
@@ -483,6 +485,7 @@ export class Session extends Race {
       this.endTow(A);   // Teamkollege hängt schon lange dicht dahinter: vorbeilassen, Windschatten abgebrochen
       return true;
     }
+    if (A.team === B.team) return true;   // Teamkollege macht immer Platz
     const key = `${A.id}>${B.id}:${B.lap}`;
     this.impedeChecked = this.impedeChecked || {};
     if (!this.impedeChecked[key]) {
