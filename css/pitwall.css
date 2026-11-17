@@ -437,3 +437,35 @@
 .pw-qa.warn { background: rgba(250,204,21,.1); border-color: rgba(250,204,21,.45); color: #fef9c3; }
 .pw-qa.bad { background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.5); color: #fee2e2; }
 .pw-qa.hidden { display: none; }
+
+/* v20: Timing-Tabelle (Rennen), Strategie-Übersicht */
+#panel-timing.race-tt .timing-head { display: none; }
+.tt-row { display: grid; grid-template-columns: 18px 4px 34px 46px 1fr 1fr 1fr 38px 16px; align-items: center; gap: 4px; min-height: 30px; padding: 0 8px;
+  border-bottom: 1px solid #161d2b; font: 600 11px var(--mono); font-variant-numeric: tabular-nums; color: #e6e9ef; }
+.tt-head { position: sticky; top: 0; z-index: 2; min-height: 26px; background: #121923; color: #8a94a7; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; }
+.tt-row .r { text-align: right; }
+.tt-row .p { text-align: right; font-weight: 800; }
+.tt-row .tb { width: 4px; height: 16px; border-radius: 2px; }
+.tt-row .n { font-weight: 800; }
+.tt-row.mine { background: rgba(250,204,21,.13); box-shadow: inset 3px 0 #facc15; }
+.tt-row.mine .n { color: #facc15; }
+.tt-row.sel { background: #1c2740; }
+.tt-row.out { opacity: .45; }
+.tt-s { text-align: right; color: #8a94a7; }
+.tt-s.p { color: #c084fc; } .tt-s.g { color: #4ade80; } .tt-s.y { color: #facc15; } .tt-s.n { color: #94a3b8; }
+.tt-row .ty { display: inline-flex; align-items: center; gap: 3px; }
+.tt-row .ty .pw-tyre { width: 16px; height: 16px; font-size: 8.5px; border-width: 2px; font-style: normal; }
+.tt-det { padding: 6px 10px 8px 34px; font-size: 11.5px; color: #c3cad6; background: #10161f; border-bottom: 1px solid #161d2b; }
+.pw-stratbtn { width: 100%; margin-top: 12px; }
+.pw-sc { max-height: 64vh; overflow-y: auto; margin-bottom: 12px; }
+.sc-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 10px; font-size: 11px; color: #aab0bf; }
+.sc-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.sc-legend .sc-seg { display: inline-block; width: 16px; height: 6px; }
+.sc-row { display: grid; grid-template-columns: 84px 1fr 30px; align-items: center; gap: 8px; min-height: 26px; font: 700 11px system-ui, sans-serif; }
+.sc-row.mine .sc-name { color: #facc15; }
+.sc-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e6e9ef; letter-spacing: .02em; }
+.sc-bar { display: flex; align-items: center; height: 14px; }
+.sc-seg { position: relative; height: 5px; border-radius: 3px; }
+.sc-seg.S { background: #ef4444; } .sc-seg.M { background: #facc15; } .sc-seg.H { background: #f1f4f8; } .sc-seg.I { background: #22c55e; } .sc-seg.W { background: #3b82f6; }
+.sc-seg b { position: absolute; right: 0; top: 50%; transform: translate(50%, -50%); z-index: 1; padding: 0 2px; border-radius: 3px; background: #1b1f2a; font: 800 9.5px var(--mono); color: #fff; }
+.sc-end { text-align: right; font: 700 10.5px var(--mono); color: #aab0bf; }

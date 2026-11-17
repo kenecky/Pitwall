@@ -244,7 +244,12 @@ export class TrackMap {
       const tap = this.tapCandidate && this.pointers.size === 1 && performance.now() - this.tapCandidate.t < 500;
       this.pointers.delete(e.pointerId);
       if (this.pointers.size < 2) this.pinch = null;
-      if (tap && e.type === 'pointerup') this.handleTap(this.tapCandidate.x, this.tapCandidate.y);
+      if (tap && e.type === 'pointerup') {
+        // Pit Wall: Doppeltipp (auch am Handy) = wie Doppelklick
+        const now = performance.now();
+        if (this.lastTapT && now - this.lastTapT < 320) { this.lastTapT = 0; this.doubleTap(this.tapCandidate.x, this.tapCandidate.y); }
+        else { this.lastTapT = now; this.handleTap(this.tapCandidate.x, this.tapCandidate.y); }
+      }
       this.tapCandidate = null;
     };
     c.addEventListener('pointerup', end);
@@ -256,10 +261,18 @@ export class TrackMap {
     }, { passive: false });
     c.addEventListener('dblclick', e => {
       e.preventDefault();
+      if (performance.now() - (this.lastDouble || 0) < 400) return;   // schon über Doppeltipp erledigt
       const [x, y] = local(e);
-      if (this.zoom > 1.5) this.resetView();
-      else this.zoomAt(2.5, x, y);
+      this.doubleTap(x, y);
     });
+  }
+
+  // Doppelklick/Doppeltipp: Verfolgen beenden bzw. ganze Strecke, sonst hineinzoomen
+  doubleTap(x, y) {
+    this.lastDouble = performance.now();
+    if (this.follow) { this.stopFollow(); this.selected = null; if (this.onFollowEnd) this.onFollowEnd(); return; }
+    if (this.zoom > 1.5) this.resetView();
+    else this.zoomAt(2.5, x, y);
   }
 
   handleTap(x, y) {

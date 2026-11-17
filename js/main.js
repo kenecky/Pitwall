@@ -24,6 +24,8 @@ import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGa
 import { serializeRace, restoreRace } from './sim/persist.js';
 import { newSeason, currentEntry, seasonOver, weekendParts, recordWeekend, driverStandings, teamStandings, finishOf, SPRINT_TRACKS } from './team/season.js';
 import { pressQuotes } from './team/press.js';
+import { updateRaceData } from './team/raceData.js';
+import { renderRaceTable, strategyChart } from './ui/raceTable.js';
 import { initCareer, careerAfterWeekend, careerSeasonEnd, acceptOffer, startNewSeason } from './team/career.js';
 import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
@@ -42,7 +44,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 19;
+export const VERSION = 20;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -1102,7 +1104,7 @@ function frame(now) {
     // Vorspulen: so viele Schritte wie in ~30 ms passen, ohne Abbremsen
     const t0 = performance.now();
     while (race.phase !== 'finished' && performance.now() - t0 < 30) {
-      for (let k = 0; k < 40; k++) { race.step(); autoDirect(race); teamStep(race); radioStep(race); }
+      for (let k = 0; k < 40; k++) { race.step(); autoDirect(race); teamStep(race); radioStep(race); updateRaceData(race); }
     }
     if (race.phase === 'finished') { ff = false; $('ffTag').classList.add('hidden'); }
     for (const c of race.cars) prevD.set(c, c.d);
@@ -1115,6 +1117,7 @@ function frame(now) {
       autoDirect(race);
       teamStep(race);
       radioStep(race);
+      updateRaceData(race);
       acc -= DT;
       n++;
       if (watchEvents()) break;
@@ -1214,7 +1217,11 @@ function refreshUi() {
   if (activeTab === 'circle') renderCircle();
   if (weatherPanel.isOpen && weatherPanel.offset === 0) weatherPanel.drawRadar();
   if (!touching) {
-    if (activeTab === 'timing') renderTiming($('timing'), race, { gapMode: settings.gapMode, selected: map.selected });
+    $('panel-timing').classList.toggle('race-tt', !race.isSession);
+    if (activeTab === 'timing') {
+      if (race.isSession) renderTiming($('timing'), race, { gapMode: settings.gapMode, selected: map.selected });
+      else renderRaceTable($('timing'), race, map.selected);
+    }
     if (settings.showTower) renderTower($('tower'), race, map.selected, settings.gapMode);
   }
 }
@@ -1983,10 +1990,15 @@ function showResults() {
   $('resultBody').innerHTML = `<div class="pw-sum"><b>${esc(t.name)}</b>: ${mine.map(c => `${c.id} ${c.retired ? 'DNF' : c.dsq ? 'DSQ' : 'P' + (st.indexOf(c) + 1)}`).join(' · ')} · <b>${teamPts} Punkte</b></div>
     <table class="pw-res"><tbody>${rows}</tbody></table>
     ${mine.map(c => `<div class="pw-hist"><b>${c.id}</b> ${histHtml(c)}</div>`).join('')}
+    <button class="secondary-btn pw-stratbtn" id="openStrat">📊 Strategien aller Fahrer</button>
     <div class="pw-label" style="margin-top:14px">PRESSESTIMMEN</div>
     ${pressQuotes(race, teamsNow()).map(p => `<div class="pw-press"><b>${esc(p.outlet)}</b>„${esc(p.text)}“</div>`).join('')}`;
   $('resultTitle').textContent = `🏁 ${race.kind === 'sprint' ? 'Sprint' : 'Rennen'} · ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
   $('resultScreen').classList.remove('hidden');
+  $('openStrat').onclick = () => {
+    $('stratViewBody').innerHTML = strategyChart(race);
+    $('stratView').classList.remove('hidden');
+  };
 }
 function showSessionResults() {
   const st = race.standings();
@@ -2178,6 +2190,15 @@ $('labelsBtn').addEventListener('click', () => {
   $('labelsBtn').classList.toggle('active', settings.showLabels);
 });
 $('labelsBtn').classList.toggle('active', Boolean(settings.showLabels));
+$('timing').addEventListener('click', e => {
+  const row = e.target.closest('[data-id]');
+  if (!row || !race) return;
+  const id = row.dataset.id;
+  if (map.selected === id) { map.stopFollow(); map.selected = null; }
+  else map.startFollow(id);
+  refreshUi();
+});
+map.onFollowEnd = () => refreshUi();
 // „Gesamt“: Verfolgen beenden und ganze Strecke zeigen
 $('zoomResetBtn').addEventListener('click', () => { if (map.follow) map.stopFollow(); else map.resetView(); map.selected = null; });
 function applyTower() {

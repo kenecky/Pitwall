@@ -382,3 +382,15 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Wochenendes, `set.lapCount`), nicht nur im aktuellen Stint. Simulierte Sätze starten mit ihren simulierten Runden.
 - Fahrer-Reiter antippen: Karte folgt dem Fahrer durchgehend und hält ihn mittig; „⤢ Gesamt“ beendet das Verfolgen und zeigt
   wieder die ganze Strecke.
+
+### v20 – Timing-Tabelle, Strategie-Übersicht, Verfolgen per ZEITEN, Doppeltipp
+- Karte: Doppelklick bzw. Doppeltipp (auch am Handy) beendet das Verfolgen eines Fahrers und zeigt die ganze Strecke.
+- ZEITEN: Fahrer antippen (jeder Fahrer) → Details klappen auf und die Karte folgt ihm; erneut antippen → Details zu,
+  Verfolgen beendet.
+- **Timing-Tabelle im Rennen** (Reiter ZEITEN, `js/ui/raceTable.js`): Position, Teamfarbe, Fahrer, Abstand zum Vordermann,
+  letzte Sektorzeiten S1–S3 (violett = schnellste im Rennen, grün = persönliche Bestzeit, gelb = langsamer, grau =
+  Box/Neutralisierung), Reifen mit Runden, Stopps. Eigene Fahrer markiert. Sektorzeiten werden innerhalb des
+  Simulationsschritts interpoliert (Summe ≈ Rundenzeit). Training/Qualifying behalten die bisherige Ansicht.
+- **Strategie-Übersicht** nach Rennen und Sprint (Knopf im Ergebnis): je Fahrer (nach Ergebnis sortiert) Balken in Reifenfarbe,
+  Länge = Runden des Stints, Stopp-Runde an den Übergängen, rechts Gesamtrunden bzw. DNF. Daten: `js/team/raceData.js`
+  (Stints und Sektoren aller Autos, nur Anzeige).

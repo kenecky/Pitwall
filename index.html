@@ -179,7 +179,7 @@
           <div id="lengthSeg" class="seg seg-len" role="radiogroup" aria-label="Dauer"></div>
         </div>
       </div>
-      <div class="app-version">Version 19</div>
+      <div class="app-version">Version 20</div>
       <details class="options st-card">
         <summary>Optionen</summary>
         <label>Rennen-Nr. (gleiche Nr. = gleiches Rennen)
@@ -187,6 +187,15 @@
         </label>
         <div id="seedInfo" class="seed-info"></div>
       </details>
+    </div>
+  </div>
+
+  <!-- Strategie-Übersicht nach dem Rennen -->
+  <div id="stratView" class="overlay hidden">
+    <div class="sheet">
+      <h2 class="sheet-title">📊 Strategien</h2>
+      <div id="stratViewBody" class="pw-sc"></div>
+      <div class="sheet-actions"><button class="primary-btn" onclick="document.getElementById('stratView').classList.add('hidden')">Schließen</button></div>
     </div>
   </div>
 
