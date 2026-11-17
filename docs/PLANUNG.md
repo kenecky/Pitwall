@@ -404,3 +404,8 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Qualifying: KI bleibt nie in der Box, wenn sie unter dem Strich steht (vorher seltener Zufall möglich).
 - Fenster mit X-Kopfzeile (Wetter u. a.): Kopf bleibt beim Scrollen stehen.
 - Qualifying-Out-Lap: Autos fahren Schlangenlinien zum Reifenaufwärmen (seltener als in der Formationsrunde).
+
+### v23 – Violett nur einmal je Sektor, Tempo-Knopf robuster
+- Neue Sektor-Bestzeit: beim bisherigen Halter wird der Sektor grün (Training/Qualifying und Rennen).
+- Tempo-Knopf: Finger wird an den Knopf gebunden (Pointer-Capture), abgebrochene Gesten räumen den Timer auf,
+  hängender Menü-Zustand wird repariert. (Meldung: in Q3 Suzuka ~30 s keine Reaktion.)

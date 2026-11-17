@@ -256,7 +256,15 @@ export class Session extends Race {
       if (c.secPush && c.curSecs.length === done) {
         if (!c.pbSec) c.pbSec = [Infinity, Infinity, Infinity];
         let st = 'y';
-        if (t < this.bestSec[done]) { st = 'p'; this.bestSec[done] = t; }
+        if (t < this.bestSec[done]) {
+          st = 'p'; this.bestSec[done] = t;
+          // Nur einer kann violett haben: beim bisherigen Halter wird der Sektor grün
+          for (const o of this.cars) {
+            if (o === c) continue;
+            if (o.curSecs && o.curSecs[done] === 'p') o.curSecs[done] = 'g';
+            if (o.lastSecs && o.lastSecs[done] === 'p') o.lastSecs[done] = 'g';
+          }
+        }
         else if (t < c.pbSec[done]) st = 'g';
         if (t < c.pbSec[done]) c.pbSec[done] = t;
         c.curSecs.push(st);

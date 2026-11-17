@@ -30,7 +30,11 @@ export function updateRaceData(race) {
     c.rPit = c.inPit;
     const pb = c.rPb || (c.rPb = [Infinity, Infinity, Infinity]);
     let s = 'y';
-    if (t < race.rBest[done]) { s = 'p'; race.rBest[done] = t; } else if (t < pb[done]) s = 'g';
+    if (t < race.rBest[done]) {
+      s = 'p'; race.rBest[done] = t;
+      // Nur einer kann violett haben: bisheriger Bestzeit-Halter in diesem Sektor wird grün
+      for (const o of race.cars) if (o !== c && o.rSec && o.rSec[done] && o.rSec[done].st === 'p') o.rSec[done].st = 'g';
+    } else if (t < pb[done]) s = 'g';
     if (t < pb[done]) pb[done] = t;
     sec[done] = { t, st: s };
   }

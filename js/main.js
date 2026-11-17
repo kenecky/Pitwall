@@ -44,7 +44,7 @@ import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
 import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
 
-export const VERSION = 22;
+export const VERSION = 23;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -2118,6 +2118,9 @@ function speedHot(x, y) {
 }
 $('speedBtn').addEventListener('pointerdown', e => {
   e.preventDefault();
+  // Finger an den Knopf binden: pointerup kommt sicher an, auch wenn der Browser die Geste übernehmen will
+  try { $('speedBtn').setPointerCapture(e.pointerId); } catch { /* egal */ }
+  if (spd.open && $('speedMenu').classList.contains('hidden')) spd.open = false;   // Zustand reparieren
   if (spd.open) { closeSpeedMenu(); spd.skip = true; return; }
   spd.skip = false;
   spd.timer = setTimeout(() => { spd.timer = null; openSpeedMenu(); }, 320);
@@ -2139,6 +2142,7 @@ $('speedMenu').addEventListener('click', e => {
 });
 document.addEventListener('pointerdown', e => { if (spd.open && !e.target.closest('#speedMenu, #speedBtn')) closeSpeedMenu(); });
 $('speedBtn').addEventListener('contextmenu', e => e.preventDefault());
+$('speedBtn').addEventListener('pointercancel', () => { if (spd.timer) { clearTimeout(spd.timer); spd.timer = null; } });
 $('pauseBtn').addEventListener('click', () => {
   if (!race || race.phase === 'pre') return;
   paused = !paused;
