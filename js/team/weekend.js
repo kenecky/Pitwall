@@ -1,6 +1,6 @@
 // Pit Wall – Rennwochenende: Ablauf der Sessions, Setup, Reifenkontingent, Startaufstellungen.
 import { COMPOUNDS } from '../sim/tyres.js';
-import { BASE_SETUP, setupEffect, aiSetupDt } from './setup.js';
+import { setupEffect, aiSetupDt, migrateSetup, startSetup } from './setup.js';
 
 export const SESSION_NAME = { fp: 'Freies Training', sq: 'Sprint-Qualifying', sprint: 'Sprint', quali: 'Qualifying', race: 'Rennen' };
 export const SESSION_SHORT = { fp: 'FP', sq: 'SQ', sprint: 'Sprint', quali: 'Quali', race: 'Rennen' };
@@ -29,7 +29,7 @@ export function createWeekend({ parts, seed, trackId, carIds }) {
   };
   let n = 0;
   for (const id of carIds) {
-    wk.setup[id] = { ...BASE_SETUP };
+    wk.setup[id] = null;   // Start-Setup kommt mit der Strecke (applyWeekend)
     wk.notes[id] = [];
     wk.runs[id] = 0;
     wk.sets[id] = [];
@@ -112,21 +112,33 @@ export function setupFor(wk, track, carId, wet = 0) {
   return setupEffect(track, wk.setup[carId], wet);
 }
 
-// Setup und Kontingent auf eine Session/ein Rennen anwenden
+// Setup und Kontingent auf eine Session/ein Rennen anwenden.
+// Je Auto werden die Werte für trocken und nass gemerkt; setupLive mischt sie laufend nach der Nässe der Strecke.
 export function applyWeekend(race, wk) {
-  const wet = race.weather ? Math.min(1, race.weather.wetness) : 0;
   for (const c of race.cars) {
+    if (c.player && c.id in wk.setup && !wk.setup[c.id]) wk.setup[c.id] = startSetup(race.track, wk.seed, c.id);
     if (c.player && wk.setup[c.id] && !wk.autoSetup) {
-      const e = setupFor(wk, race.track, c.id, wet);
-      c.setupDt = e.dt;
-      c.setupWear = e.wear;
+      const s = wk.setup[c.id] = migrateSetup(wk.setup[c.id]);
+      const d = setupEffect(race.track, s, 0), w = setupEffect(race.track, s, 1);
+      c.su = { dry: d.dt, wet: w.dt, wd: d.wear, ww: w.wear };
     } else {
-      c.setupDt = aiSetupDt(wk.seed, c.team.id);
-      c.setupWear = 1;
+      // KI (und eigene Autos ohne Training): Setup auf KI-Niveau
+      c.su = { dry: aiSetupDt(wk.seed, c.team.id, 0), wet: aiSetupDt(wk.seed, c.team.id, 1), wd: 1, ww: 1 };
     }
   }
+  setupLive(race);
   race.onPlayerTyres = car => tyreHook(race, wk, car);
   if (race.isSession) race.setupLocked = wk.setupLocked || race.kind !== 'fp';
+}
+// Laufend: Setup-Wirkung nach aktueller Nässe (Regen-Setup schnell im Nassen, Trocken-Setup im Trockenen)
+// + Leistungsverlust der Antriebseinheit (Saison)
+export function setupLive(race) {
+  const w = race.weather ? Math.max(0, Math.min(1, race.weather.wetness / 0.7)) : 0;
+  for (const c of race.cars) {
+    if (!c.su) continue;
+    c.setupDt = (1 - w) * c.su.dry + w * c.su.wet + (c.player ? 0.0045 * (c.puWear || 0) : 0);
+    c.setupWear = w > 0.5 ? c.su.ww : c.su.wd;
+  }
 }
 
 // Ergebnis einer Session übernehmen und zur nächsten weitergehen

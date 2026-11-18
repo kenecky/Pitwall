@@ -292,11 +292,12 @@ export function teamsForWeekend(season, teams, track) {
   const m = season.mgmt;
   if (!m) return teams;
   const o = optimum(track);
-  const wn = (o.wing - 1) / 10;                 // 0 = schnelle Strecke, 1 = viel Abtrieb
+  const wn = (o.rwing - 1) / 10;                 // 0 = schnelle Strecke, 1 = viel Abtrieb
   return teams.map(t => {
     if (t.id === season.teamId) {
       const pace = t.pace + m.dev.aero * (0.5 + wn) + m.dev.motor * (1.5 - wn);
-      const rel = t.reliability + m.dev.rel * 2 - Math.max(0, m.pu.age - 5) * 3;
+      const maxWear = Math.max(0, ...Object.keys(m.drivers).map(id => puCar(m, id).wear));
+      const rel = t.reliability + m.dev.rel * 2 - Math.max(0, maxWear - 60) * 0.3;
       return { ...t, pace: Math.min(100, pace), reliability: clamp(rel, 40, 99), pitCrew: clamp(t.pitCrew + (postRating(m, 'crew') - 70) / 3.5 + (bLvl(m, 'pit') - 1) * 1.5, 60, 99) };
     }
     const a = m.ai[t.id] || { pace: 0, rel: 0 };
@@ -371,16 +372,25 @@ export function buyPart(season, key, n = 1) {
   return null;
 }
 
-// Neue Antriebseinheit: ab der fünften gibt es 10 Startplätze Strafe
-export function newPowerUnit(season) {
-  const m = season.mgmt;
-  if (m.pu.age === 0) return 'Die Antriebseinheit ist schon neu.';
-  m.pu.used++;
-  m.pu.age = 0;
-  if (m.pu.used > PU_ALLOWANCE) {
+// ---------- Antriebseinheit je Auto ----------
+// Verschleiß in % (0 = neu). Nutzt sich mit jedem gefahrenen Meter ab, mehr beim Pushen. Alter Motor = weniger Leistung.
+export const PU_RATE = 12 / 305000;            // % pro Meter bei normalem Tempo (Renndistanz ≈ 12 %)
+export function puCar(m, id) {
+  if (!m.puCars) m.puCars = {};
+  if (!m.puCars[id]) m.puCars[id] = { used: m.pu ? m.pu.used : 1, wear: m.pu ? Math.min(85, (m.pu.age || 0) * 15) : 0 };
+  return m.puCars[id];
+}
+export function puLoss(wear) { return 0.0045 * (wear || 0); }   // s pro Runde (50 % ≈ 0,22 s)
+// Neue Antriebseinheit für ein Auto: ab der fünften gibt es 10 Startplätze Strafe für diesen Fahrer
+export function newPowerUnit(season, id) {
+  const m = season.mgmt, p = puCar(m, id);
+  if (p.wear < 3) return 'Die Antriebseinheit ist schon neu.';
+  p.used++;
+  p.wear = 0;
+  if (p.used > PU_ALLOWANCE) {
     season.gridPen = season.gridPen || {};
-    for (const id of Object.keys(m.drivers)) season.gridPen[id] = (season.gridPen[id] || 0) + 10;
-    return `Neue Antriebseinheit Nr. ${m.pu.used} – über dem Kontingent: 10 Startplätze Strafe für beide Fahrer.`;
+    season.gridPen[id] = (season.gridPen[id] || 0) + 10;
+    return `${id}: Antriebseinheit Nr. ${p.used} – über dem Kontingent: 10 Startplätze Strafe.`;
   }
   return null;
 }
@@ -439,6 +449,10 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
     s.last = hit;
     if (hit) { s.hits++; m.money += s.reward; book(m, `${s.name}: ${GOALS[s.goal].text}`, s.reward); }
   }
+  // Laufzeiten der Sponsorverträge (alte Verträge ohne Laufzeit: bis Saisonende)
+  const runOut = s => { if (s.left === undefined) s.left = Math.max(1, 24 - season.round + 1); s.left--; return s.left <= 0; };
+  if (m.titleSponsor && runOut(m.titleSponsor)) { notes.push(`Der Vertrag mit Titelsponsor ${m.titleSponsor.name} ist ausgelaufen – neuen Titelsponsor suchen!`); m.titleSponsor = null; }
+  for (const sp of [...m.sponsors]) if (runOut(sp)) { notes.push(`Der Partnervertrag mit ${sp.name} ist ausgelaufen.`); m.sponsors.splice(m.sponsors.indexOf(sp), 1); }
   // Ausgaben: Personal (Budgetobergrenze), Fahrergehälter (nicht), Reparaturen und Ersatzteile
   const staff = staffCostPerRace(m) + OPS;   // Schlüsselposten + Grundbetrieb (Fabrik, Personal, Reisen, Logistik)
   spend(m, staff, 'Personal und Betrieb');
@@ -457,9 +471,8 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
   const upkeep = Object.values(m.buildings || {}).reduce((sum, l) => sum + l * 0.08, 0);
   spend(m, upkeep, 'Unterhalt der Gebäude');
   for (const d of Object.values(m.drivers)) d.morale = clamp(d.morale + (bLvl(m, 'drivers') - 1), 0, 100);
-  // Antriebseinheit altert
-  m.pu.age++;
-  if (m.pu.age >= 6) notes.push(`Die Antriebseinheit hat ${m.pu.age} Wochenenden hinter sich – das Defektrisiko steigt.`);
+  // Antriebseinheiten: Verschleiß kommt aus dem Fahren (main → m.puCars)
+  for (const id of own) { const p = puCar(m, id); if (p.wear >= 70) notes.push(`${id}: Antriebseinheit ${Math.round(p.wear)} % verschlissen – Leistung sinkt, Defektrisiko steigt.`); }
 
   // KI-Teams entwickeln auch (reiche Teams etwas schneller)
   for (const t of teams) {
@@ -505,6 +518,7 @@ export function expectedPoints(target) {
 export function seasonEnd(season, teamPos) {
   const m = season.mgmt;
   const out = [];
+  m.puCars = {}; m.pu = { used: 1, age: 0 };   // neue Saison: neues Kontingent an Antriebseinheiten
   if (m.titleSponsor && teamPos <= m.titleSponsor.target) { m.money += m.titleSponsor.bonus; out.push(`Saisonziel erreicht: Bonus ${money(m.titleSponsor.bonus)} von ${m.titleSponsor.name}.`); }
   if (m.spent > CAP) {
     const over = (m.spent - CAP) / CAP;
@@ -540,7 +554,11 @@ export function startNego(season, kind, idx) {
   if (kind === 'title' && m.titleSponsor) return 'Es gibt bereits einen Titelsponsor.';
   if (kind === 'partner' && m.sponsors.length >= 3) return 'Höchstens drei Partner – erst einen Vertrag beenden.';
   const room = 1.05 + hash(`${season.year}${season.round}${o.name}lim`) * 0.22 + (m.board.rep - 50) / 500 + (bLvl(m, 'marketing') - 1) * 0.03;
-  m.nego = { kind, name: o.name, base: { ...o }, cur: { ...o }, limit: Math.max(1.02, room), interest: 70 + Math.round(hash(o.name + 'int') * 25), round: 0, swapped: false,
+  // Laufzeit (Rennen): Wunsch des Sponsors und verdeckter Bereich, in dem er zufrieden ist
+  const h = k => hash(`${season.year}${season.round}${o.name}${k}`);
+  const pref = kind === 'title' ? 12 + Math.round(h('dp') * 8) * 2 : 6 + Math.round(h('dp') * 5) * 2;
+  const dur = { pref, min: Math.max(2, pref - 4 - Math.round(h('dmin') * 6)), max: pref + 4 + Math.round(h('dmax') * 8) };
+  m.nego = { kind, name: o.name, base: { ...o, races: pref }, cur: { ...o, races: pref }, dur, limit: Math.max(1.02, room), interest: 70 + Math.round(hash(o.name + 'int') * 25), round: 0, swapped: false,
     log: [`${o.name}: „Wir freuen uns auf die Gespräche. Das ist unser Angebot.“`] };
   return null;
 }
@@ -566,6 +584,31 @@ export function negoAction(season, action) {
     n.swapped = true;
     n.interest = clamp(n.interest + 8, 0, 100);
     n.log.push(`${n.name}: „Mehr Prämie für Erfolg? Das gefällt uns.“`);
+    return null;
+  }
+  if (action === 'shorter' || action === 'longer') {
+    // Laufzeit verhandeln: im Bereich des Sponsors ok, knapp daneben Gegenangebot, weit daneben Ablehnung
+    const d = n.dur, want = Math.max(2, n.cur.races + (action === 'longer' ? 4 : -4));
+    const fatigue = n.round * 3;
+    if (want >= d.min && want <= d.max) {
+      n.cur.races = want;
+      n.interest = clamp(n.interest + (want > d.pref ? 3 : -3) - fatigue / 3, 0, 100);
+      n.log.push(`Du schlägst ${want} Rennen vor. ${n.name}: ${want > d.pref ? '„Eine längere Partnerschaft – sehr gerne.“' : pick(QUOTE.ok)}`);
+    } else if (want >= d.min - 4 && want <= d.max + 4) {
+      n.cur.races = want < d.min ? d.min : d.max;
+      n.interest = clamp(n.interest - 8 - fatigue / 2, 0, 100);
+      n.log.push(`Du schlägst ${want} Rennen vor. ${n.name}: „${want < d.min ? 'So kurz lohnt sich das für uns nicht' : 'So lange können wir uns nicht binden'} – ${n.cur.races} Rennen wären möglich.“`);
+    } else {
+      n.interest = clamp(n.interest - 15 - fatigue, 0, 100);
+      n.log.push(`Du schlägst ${want} Rennen vor. ${n.name}: „${want < d.min ? 'Viel zu kurz.' : 'Viel zu lang.'} Darüber reden wir nicht.“`);
+    }
+    if (n.interest <= 0) {
+      n.log.push(`${n.name}: ${QUOTE.gone[0]}`);
+      n.gone = true;
+      const list = n.kind === 'title' ? m.market.title : m.market.partners;
+      const i = list.findIndex(x => x.name === n.name);
+      if (i >= 0) list.splice(i, 1);
+    }
     return null;
   }
   const pct = { up5: 0.05, up10: 0.1, up20: 0.2 }[action];
@@ -600,8 +643,9 @@ export function negoSign(season) {
   if (!n || n.gone) return 'Keine laufende Verhandlung.';
   const list = n.kind === 'title' ? m.market.title : m.market.partners;
   const i = list.findIndex(x => x.name === n.name);
-  if (n.kind === 'title') { if (m.titleSponsor) return 'Es gibt bereits einen Titelsponsor.'; m.titleSponsor = { ...n.cur }; m.market.title = []; }
-  else { if (m.sponsors.length >= 3) return 'Höchstens drei Partner.'; m.sponsors.push({ ...n.cur, hits: 0 }); if (i >= 0) list.splice(i, 1); }
+  const left = n.cur.races || 12;
+  if (n.kind === 'title') { if (m.titleSponsor) return 'Es gibt bereits einen Titelsponsor.'; m.titleSponsor = { ...n.cur, left }; m.market.title = []; }
+  else { if (m.sponsors.length >= 3) return 'Höchstens drei Partner.'; m.sponsors.push({ ...n.cur, left, hits: 0 }); if (i >= 0) list.splice(i, 1); }
   m.nego = null;
   scheduleSponsorEvents(season, n.name, n.kind === 'title' ? 4 : 2);
   return null;

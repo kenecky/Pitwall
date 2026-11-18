@@ -29,7 +29,7 @@ import { renderRaceTable, strategyChart } from './ui/raceTable.js';
 import { initCareer, careerAfterWeekend, careerSeasonEnd, acceptOffer, startNewSeason } from './team/career.js';
 import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
-  extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
+  extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, PU_RATE, puCar, puLoss, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
   migrateManagement, preseasonTasks, readyForRace, signTitle, signPartner, dropPartner, hire, chooseConcept, startSeason, devFactor, staffCostPerRace,
   migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, resolveSponsorEvent, migrateEvents, SPONSOR_EVENTS, agendaDialog, resolveAgenda, setBookingContext, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
 } from './team/management.js';
@@ -42,11 +42,11 @@ import { radioStep, answer, openMessage, ownCall, OWN_CALLS, moodLabel } from '.
 
 import { Session } from './sim/session.js';
 import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
-import { SETUP_KEYS, feedback, setupScore } from './team/setup.js';
+import { SETUP_KEYS, feedback, setupScore, WET_SHIFT } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 31;
+export const VERSION = 33;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -275,6 +275,11 @@ function prepareSession() {
   race = isS ? new Session(opts) : new Race(opts);
   // Saison: Stimmung der Fahrer aus der Teamzentrale
   if (wk.season && season && season.mgmt) for (const c of playerCars(race)) { const d = season.mgmt.drivers[c.id]; if (d) c.mood = d.morale; }
+  // Saison: Antriebseinheit je Auto (Verschleiß aus der Teamzentrale bzw. aus den Sessions dieses Wochenendes)
+  if (wk.season && season && season.mgmt) {
+    race.puRate = PU_RATE;
+    for (const c of playerCars(race)) c.puWear = wk.pu && wk.pu[c.id] !== undefined ? wk.pu[c.id] : puCar(season.mgmt, c.id).wear;
+  }
   applyWeekend(race, wk);
   hookRace();
   resetUi();
@@ -316,7 +321,7 @@ function onGarage(car) {
   car.redAbort = false;
   if (race.kind === 'fp' && (laps.length || red)) {
     // Auch nach Abbruch durch Rote Flagge: Rückmeldung zum Setup (aus Aufwärm- und angefangenen Runden)
-    const fb = feedback(race.track, wk.setup[car.id], car.driver, race.time + (wk.runs[car.id]++) * 7.3);
+    const fb = feedback(race.track, wk.setup[car.id], car.driver, race.time + (wk.runs[car.id]++) * 7.3, race.weather.wetness / 0.7);
     const text = red ? `Abgebrochen wegen Roter Flagge. ${fb.text}` : fb.text;
     wk.notes[car.id].push({ text, setup: { ...wk.setup[car.id] }, best: laps.length ? Math.min(...laps.map(l => l.time)) : null, n: laps.length });
     race.emit('radio', `Funk ${car.id}: „${text}“`, { cars: [car.id], own: true });
@@ -408,8 +413,21 @@ function renderResume() {
 
 // ---------- Saison-Übersicht ----------
 let seasonTab = 'drivers';
-function showSeason(notes = []) {
+// Live-WM während des Wochenendes: Punkte aus dem Sprint (falls schon gefahren) und dem laufenden Rennen/Sprint
+function liveWeekendPts() {
+  if (!season || !wk || !wk.season || !race) return null;
+  const add = {};
+  const give = (id, p) => { if (p) add[id] = (add[id] || 0) + p; };
+  if (wk.results.sprint && race.kind !== 'sprint') for (const r of wk.results.sprint) if (!r.retired && !r.dsq) give(r.id, SPRINT_PTS[r.pos - 1] || 0);
+  const live = !race.isSession && !race.preStart && (race.kind === 'race' || race.kind === 'sprint');
+  if (live) race.standings().filter(c => !c.retired && !c.dsq).forEach((c, i) => give(c.id, (race.kind === 'sprint' ? SPRINT_PTS : POINTS)[i] || 0));
+  return Object.keys(add).length || live ? { add, live } : null;
+}
+let seasonLive = false;
+function showSeason(notes = [], live = false) {
   if (!season) return;
+  seasonLive = live;
+  $('seasonResetBtn').classList.toggle('hidden', live);
   $('seasonScreen').querySelector('.sheet-title').textContent = `🏆 Saison ${season.year}`;
   $('seasonNotes').innerHTML = notes.map(n => `<div class="pw-sum">${n}</div>`).join('');
   renderSeasonTab();
@@ -421,6 +439,21 @@ function renderSeasonTab() {
 }
 function seasonTabHtml(seasonTab) {
   let html = '';
+  const lw = seasonLive ? liveWeekendPts() : null;
+  if (lw && seasonTab !== 'calendar') {
+    // Voraussichtlicher Stand nach diesem Wochenende (live nach aktuellen Platzierungen)
+    const arrow = (a, b) => a < b ? `<small class="pos">▲${b - a}</small>` : a > b ? `<small class="neg">▼${a - b}</small>` : '';
+    const head = `<div class="pw-hint">${lw.live ? '🔴 LIVE – voraussichtlicher Stand nach den aktuellen Platzierungen' : 'Stand inklusive Sprint'}</div>`;
+    if (seasonTab === 'drivers') {
+      const before = driverStandings(season, DRIVERS);
+      const after = before.map(x => ({ ...x, now: lw.add[x.d.id] || 0, pts: x.pts + (lw.add[x.d.id] || 0) })).sort((a, b) => b.pts - a.pts || b.wins - a.wins);
+      return head + `<table class="pw-res"><tbody>${after.map((x, i) => `<tr class="${x.d.team === season.teamId ? 'mine' : ''}"><td>${i + 1} ${arrow(i, before.findIndex(y => y.d.id === x.d.id))}</td><td class="tc" style="background:${TEAM_BY_ID[x.d.team].color}"></td><td>${esc(x.d.first[0])}. ${esc(x.d.last)}</td><td>${esc(TEAM_BY_ID[x.d.team].short)}</td><td style="text-align:right">${x.now ? `<small class="pos">+${x.now}</small>` : ''}</td><td style="text-align:right"><b>${x.pts}</b></td></tr>`).join('')}</tbody></table>`;
+    }
+    const before = teamStandings(season, TEAMS);
+    const tAdd = t => DRIVERS.filter(d => d.team === t.id).reduce((a, d) => a + (lw.add[d.id] || 0), 0);
+    const after = before.map(x => ({ ...x, now: tAdd(x.t), pts: x.pts + tAdd(x.t) })).sort((a, b) => b.pts - a.pts);
+    return head + `<table class="pw-res"><tbody>${after.map((x, i) => `<tr class="${x.t.id === season.teamId ? 'mine' : ''}"><td>${i + 1} ${arrow(i, before.findIndex(y => y.t.id === x.t.id))}</td><td class="tc" style="background:${x.t.color}"></td><td>${esc(x.t.name)}</td><td style="text-align:right">${x.now ? `<small class="pos">+${x.now}</small>` : ''}</td><td style="text-align:right"><b>${x.pts}</b></td></tr>`).join('')}</tbody></table>`;
+  }
   if (seasonTab === 'drivers') {
     html = `<table class="pw-res"><tbody>${driverStandings(season, DRIVERS).map((x, i) => `<tr class="${x.d.team === season.teamId ? 'mine' : ''}"><td>${i + 1}</td><td class="tc" style="background:${TEAM_BY_ID[x.d.team].color}"></td><td>${esc(x.d.first[0])}. ${esc(x.d.last)}</td><td>${esc(TEAM_BY_ID[x.d.team].short)}</td><td style="text-align:right">${x.wins ? `${x.wins}× 🏆` : ''}</td><td style="text-align:right"><b>${x.pts}</b></td></tr>`).join('')}</tbody></table>`;
   } else if (seasonTab === 'teams') {
@@ -439,6 +472,7 @@ function seasonTabHtml(seasonTab) {
 for (const b of document.querySelectorAll('#seasonScreen .stab')) b.addEventListener('click', () => { seasonTab = b.dataset.stab; renderSeasonTab(); });
 $('seasonCloseBtn').addEventListener('click', () => $('seasonScreen').classList.add('hidden'));
 $('seasonBtn').addEventListener('click', () => showSeason());
+$('wmBtn').addEventListener('click', () => showSeason([], true));
 $('seasonResetBtn').addEventListener('click', async () => {
   if (!(await pwConfirm('Saison neu starten?', 'Der bisherige Saisonstand geht verloren.', 'Neu starten'))) return;
   season = null;
@@ -504,7 +538,7 @@ function tileStatus(k) {
     case 'dev': return !m.concept ? ['Auto-Konzept fehlt!', 'bad'] : m.projects.length ? [`${m.projects.length} Projekt${m.projects.length > 1 ? 'e' : ''} läuft`, ''] : ['Keine Projekte', 'warn'];
     case 'buildings': return m.construction ? [`Baustelle bis ${fmtDate(m.construction.done)}`, ''] : ['Keine Baustelle', 'warn'];
     case 'calendar': { const n = nextEvent(season, SEASON_2026, trackLabel); return n ? [`Nächster Termin: ${fmtDate(n.date)}`, ''] : ['Keine Termine', '']; }
-    case 'car': return m.pu.age >= 6 ? [`Antrieb ${m.pu.age} Wochenenden alt`, 'warn'] : [`Flügel ${m.parts.wing} · Chassis ${m.parts.chassis}`, ''];
+    case 'car': { const w = Math.max(...Object.keys(m.drivers).map(id => puCar(m, id).wear)); return w >= 70 ? [`Antrieb ${Math.round(w)} % verschlissen`, 'warn'] : [`Flügel ${m.parts.wing} · Chassis ${m.parts.chassis}`, '']; }
     case 'money': return [`${money(m.money)}`, m.money < 0 ? 'bad' : ''];
     case 'board': return [`Ruf ${m.board.rep} · Ziel P${m.board.target}`, m.board.rep < 25 ? 'bad' : ''];
     case 'standings': { const p = teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1; return [season.results.length ? `Teamwertung P${p}` : 'Noch keine Rennen', '']; }
@@ -535,14 +569,14 @@ function renderHQ() {
     h += '<div class="pw-label">TITELSPONSOR</div>';
     if (m.titleSponsor) {
       const t = m.titleSponsor;
-      h += `<div class="pw-mcard"><b>${esc(t.name)}</b><small>${money(t.perRace)} pro Rennen · Bonus ${money(t.bonus)} bei Teamwertung Platz ${t.target} oder besser</small></div>`;
+      h += `<div class="pw-mcard"><b>${esc(t.name)}</b><small>${money(t.perRace)} pro Rennen · Bonus ${money(t.bonus)} bei Teamwertung Platz ${t.target} oder besser${t.left !== undefined ? ` · <b>noch ${t.left} Rennen</b>` : ''}</small></div>`;
     } else {
       h += '<div class="pw-hint bad">Ohne Titelsponsor fehlt die wichtigste Einnahme. Wähle ein Angebot:</div>';
       h += (m.market.title || []).map((o, i) => `<div class="pw-mcard"><b>${esc(o.name)}</b> <span class="pw-chip">${o.kind}</span><small>${money(o.perRace)} pro Rennen · Bonus ${money(o.bonus)} bei Platz ${o.target} oder besser</small>
         <div class="pw-hqbtns"><button class="go" data-nego="title" data-idx="${i}">Verhandeln</button></div></div>`).join('');
     }
     h += `<div class="pw-label">PARTNER (${m.sponsors.length}/3) – Grundbetrag pro Rennen + Prämie fürs Ziel</div>`;
-    h += m.sponsors.length ? m.sponsors.map((s, i) => `<div class="pw-mcard"><b>${esc(s.name)}</b><small>${s.fee ? `${money(s.fee)} pro Rennen · ` : ''}Prämie ${money(s.reward)}: ${goalText(s.goal)} · Zufriedenheit ${s.happy ?? 70} · erreicht ${s.hits}×${s.last === undefined ? '' : s.last ? ' · zuletzt ✓' : ' · zuletzt ✗'}</small>
+    h += m.sponsors.length ? m.sponsors.map((s, i) => `<div class="pw-mcard"><b>${esc(s.name)}</b><small>${s.fee ? `${money(s.fee)} pro Rennen · ` : ''}Prämie ${money(s.reward)}: ${goalText(s.goal)} · ${s.left !== undefined ? `noch ${s.left} Rennen · ` : ''}Zufriedenheit ${s.happy ?? 70} · erreicht ${s.hits}×${s.last === undefined ? '' : s.last ? ' · zuletzt ✓' : ' · zuletzt ✗'}</small>
       <div class="pw-hqbtns"><button data-drop="${i}">Vertrag beenden</button></div></div>`).join('') : '<div class="pw-hint">Noch keine Partner.</div>';
     if (m.sponsors.length < 3) {
       h += '<div class="pw-label">ANGEBOTE</div>' + (m.market.partners || []).map((o, i) => `<div class="pw-mcard"><b>${esc(o.name)}</b><small>${money(o.fee)} pro Rennen · Prämie ${money(o.reward)}: ${goalText(o.goal)}</small>
@@ -605,8 +639,13 @@ function renderHQ() {
   } else if (hqTab === 'car') {
     h = '<div class="pw-label">ERSATZTEILE</div>' + Object.entries(PARTS).map(([k, p]) => `<div class="pw-mcard"><b>${p.name}</b> · ${m.parts[k]} auf Lager<small>${money(p.price)} pro Stück · ohne Lager Eilfertigung zum doppelten Preis</small>
       <div class="pw-hqbtns"><button data-part="${k}" data-n="1">+1 kaufen</button><button data-part="${k}" data-n="3">+3 kaufen</button></div></div>`).join('')
-      + `<div class="pw-label">ANTRIEBSEINHEIT</div><div class="pw-mcard"><b>Nr. ${m.pu.used} von ${PU_ALLOWANCE}</b> · ${m.pu.age} Wochenende${m.pu.age === 1 ? '' : 'n'} alt<small>${m.pu.age >= 6 ? 'Defektrisiko steigt deutlich!' : 'Ab 6 Wochenenden steigt das Defektrisiko.'} Ab der ${PU_ALLOWANCE + 1}. Einheit: 10 Startplätze Strafe.</small>
-      <div class="pw-hqbtns"><button data-pu="1">Neue Einheit einbauen</button></div></div>`;
+      + `<div class="pw-label">ANTRIEBSEINHEITEN – ${PU_ALLOWANCE} PRO FAHRER UND SAISON</div>` + Object.keys(m.drivers).map(id => {
+        const p = puCar(m, id), w = Math.round(p.wear);
+        return `<div class="pw-mcard"><b>${esc(id)} · Einheit Nr. ${p.used} von ${PU_ALLOWANCE}</b>
+          ${hqBar('VERSCHLEISS', w, 100, w >= 70 ? '#f87171' : w >= 45 ? '#facc15' : '#4ade80', `${w} %`)}
+          <small>Leistungsverlust ~${fmt(puLoss(p.wear), 2)} s pro Runde${w >= 60 ? ' · Defektrisiko erhöht' : ''}. Pushen und Attacke nutzen den Motor stärker ab.${p.used >= PU_ALLOWANCE ? ` Die nächste Einheit kostet 10 Startplätze.` : ''}</small>
+          <div class="pw-hqbtns"><button data-pu="${esc(id)}">Neue Einheit für ${esc(id)}</button></div></div>`;
+      }).join('');
   } else if (hqTab === 'money') {
     const inc = (m.titleSponsor ? m.titleSponsor.perRace : 0) + m.sponsors.reduce((s, x) => s + (x.fee || 0), 0) + 1.2;
     const out = OPS + staffCostPerRace(m) + Object.values(m.drivers).reduce((s, d) => s + d.salary, 0) / 24;
@@ -725,8 +764,8 @@ function calMonthHtml() {
 function negoHtml(n) {
   const k = n.kind === 'title' ? 'perRace' : 'fee';
   const terms = n.kind === 'title'
-    ? `<div class="pw-terms"><div><small>pro Rennen</small><b>${money(n.cur.perRace)}</b></div><div><small>Saisonbonus</small><b>${money(n.cur.bonus)}</b></div><div><small>Ziel</small><b>Platz ${n.cur.target}</b></div></div>`
-    : `<div class="pw-terms"><div><small>pro Rennen</small><b>${money(n.cur.fee)}</b></div><div><small>Prämie</small><b>${money(n.cur.reward)}</b></div><div><small>Ziel</small><b>${goalText(n.cur.goal)}</b></div></div>`;
+    ? `<div class="pw-terms"><div><small>pro Rennen</small><b>${money(n.cur.perRace)}</b></div><div><small>Saisonbonus</small><b>${money(n.cur.bonus)}</b></div><div><small>Ziel</small><b>Platz ${n.cur.target}</b></div><div><small>Laufzeit</small><b>${n.cur.races || 12} Rennen</b></div></div>`
+    : `<div class="pw-terms"><div><small>pro Rennen</small><b>${money(n.cur.fee)}</b></div><div><small>Prämie</small><b>${money(n.cur.reward)}</b></div><div><small>Ziel</small><b>${goalText(n.cur.goal)}</b></div><div><small>Laufzeit</small><b>${n.cur.races || 8} Rennen</b></div></div>`;
   // Geschätzter Saisonwert: Fixum × 24 Rennen + erwartete Prämien (Bonus/Prämie zu ~40 % erreicht)
   const val = o => (n.kind === 'title' ? o.perRace * 24 + o.bonus * 0.5 : o.fee * 24 + o.reward * 24 * 0.4);
   const diff = Math.round((val(n.cur) / val(n.base) - 1) * 100);
@@ -737,9 +776,11 @@ function negoHtml(n) {
     ${n.gone ? '<div class="pw-hqbtns"><button data-na="cancel">Zurück zu den Sponsoren</button></div>' : `
     <div class="pw-label">DEINE FORDERUNG</div>
     <div class="pw-hqbtns"><button data-na="up5">+5 %<small>vorsichtig</small></button><button data-na="up10">+10 %<small>normal</small></button><button data-na="up20">+20 %<small>riskant</small></button></div>
+    <div class="pw-label">LAUFZEIT</div>
+    <div class="pw-hqbtns"><button data-na="shorter" ${(n.cur.races || 0) <= 2 ? 'disabled' : ''}>Kürzer<small>−4 Rennen</small></button><button data-na="longer">Länger<small>+4 Rennen</small></button></div>
     <div class="pw-hqbtns"><button data-na="swap" ${n.swapped ? 'disabled' : ''}>Mehr Erfolgsprämie<small>20 % Fixum gegen +60 % ${n.kind === 'title' ? 'Bonus' : 'Prämie'}</small></button></div>
     <div class="pw-hqbtns"><button class="go" data-na="sign">Unterschreiben</button><button data-na="cancel">Abbrechen</button></div>
-    <div class="pw-hint">Jeder Sponsor hat eine Grenze, die du nicht siehst. Zu hohe Forderungen und viele Runden kosten Interesse – bei 0 zieht er sein Angebot zurück. Besserer Ruf und das Marketing-Gebäude geben mehr Spielraum.</div>`}`;
+    <div class="pw-hint">Jeder Sponsor hat eine Grenze beim Geld und einen Bereich bei der Laufzeit, die du nicht siehst. Nach Ablauf der Laufzeit endet der Vertrag. Zu hohe Forderungen und viele Runden kosten Interesse – bei 0 zieht er sein Angebot zurück. Besserer Ruf und das Marketing-Gebäude geben mehr Spielraum.</div>`}`;
 }
 
 // Eigenes Bestätigungsfenster (statt Browser-Dialog)
@@ -879,7 +920,11 @@ $('hqBody').addEventListener('click', async e => {
     if (!(await pwConfirm(`${n}× ${p.name} kaufen?`, `Kosten ${money(p.price * n)} (Budgetobergrenze).`, 'Kaufen'))) return;
     err = buyPart(season, b.dataset.part, n);
   }
-  else if (b.dataset.pu) { if (!(await pwConfirm('Neue Antriebseinheit einbauen?', `Erlaubt sind ${PU_ALLOWANCE} pro Saison. Ab der ${PU_ALLOWANCE + 1}. gibt es 10 Startplätze Strafe.`, 'Einbauen'))) return; err = newPowerUnit(season); }
+  else if (b.dataset.pu) {
+    const id = b.dataset.pu, p = puCar(season.mgmt, id);
+    if (!(await pwConfirm(`Neue Antriebseinheit für ${id}?`, `Aktuell: Nr. ${p.used}, ${Math.round(p.wear)} % verschlissen. Erlaubt sind ${PU_ALLOWANCE} pro Saison – ab der ${PU_ALLOWANCE + 1}. gibt es 10 Startplätze Strafe.`, 'Einbauen'))) return;
+    err = newPowerUnit(season, id);
+  }
   else if (b.dataset.talk) err = talkTo(season, b.dataset.talk, b.dataset.k);
   else if (b.dataset.extend) { if (!(await pwConfirm('Vertrag verlängern?', 'Ein Jahr länger, Gehalt +8 % und eine Unterschriftsprämie.', 'Verlängern'))) return; err = extendContract(season, b.dataset.extend); }
   else if (b.dataset.offer || b.dataset.newseason) {
@@ -1229,7 +1274,9 @@ function refreshUi() {
   checkNotices();
   renderWall();
   if (activeTab === 'circle') renderCircle();
-  if (weatherPanel.isOpen && weatherPanel.offset === 0) weatherPanel.drawRadar();
+  if (seasonLive && !$('seasonScreen').classList.contains('hidden') && performance.now() - (ui.wmAt || 0) > 1000) { ui.wmAt = performance.now(); renderSeasonTab(); }
+  $('wmBtn').classList.toggle('hidden', !(wk && wk.season && season));
+  if (weatherPanel.isOpen) { weatherPanel.updateNow(); if (weatherPanel.offset === 0) weatherPanel.drawRadar(); }
   if (!touching) {
     $('panel-timing').classList.toggle('race-tt', !race.isSession);
     if (activeTab === 'timing') {
@@ -1717,6 +1764,7 @@ function buildSessionWall() {
       <div class="pw-laps" data-f="laps"></div>
       ${fp ? `<div class="pw-label">SETUP <span data-f="lock"></span></div>
       <div class="pw-setup">${Object.entries(SETUP_KEYS).map(([k, d]) => `<div class="pw-srow"><span>${d.name}</span><button data-set="${k}" data-d="-1">−</button><b data-sv="${k}"></b><button data-set="${k}" data-d="1">+</button><small>${d.lo} ↔ ${d.hi}</small></div>`).join('')}</div>
+      <div class="pw-hint">${wetHint()}</div>
       <div class="pw-label">RÜCKMELDUNG DES FAHRERS</div>
       <div class="pw-notes" data-f="notes"></div>` : ''}
       <div class="pw-label">REIFEN-KONTINGENT</div>
@@ -1839,8 +1887,7 @@ function renderSessionWall() {
     if (fp) {
       const lock = wk.setupLocked ? 'Parc fermé' : car.inGarage ? '' : '· nur in der Garage änderbar';
       // Ingenieure (Saison): Einschätzung der Setup-Qualität, genauer mit besseren Ingenieuren
-      const est = wk.season && season ? engineerEstimate(season, setupScore(race.track, wk.setup[car.id]), `${wk.seed}${JSON.stringify(wk.setup[car.id])}`) : null;
-      f('lock').textContent = `${lock}${est !== null ? ` · Ingenieure: Setup ~${est} %` : ''}`;
+      f('lock').textContent = `${lock}${engEst(car.id)}`;
       for (const [k] of Object.entries(SETUP_KEYS)) el.querySelector(`[data-sv="${k}"]`).textContent = wk.setup[car.id][k];
       for (const b of el.querySelectorAll('[data-set]')) b.disabled = wk.setupLocked || !car.inGarage;
       el.querySelector('.pw-setup').classList.toggle('locked', wk.setupLocked || !car.inGarage);
@@ -1848,7 +1895,7 @@ function renderSessionWall() {
       const nsig = String(wk.notes[car.id].length);
       if (f('notes').dataset.sig !== nsig) {
         f('notes').dataset.sig = nsig;
-        f('notes').innerHTML = notes.length ? notes.map(n => `<div>„${esc(n.text)}“<small>Flügel ${n.setup.wing} · Balance ${n.setup.bal} · Federung ${n.setup.stiff} · ${n.n ? `${n.n} Rd, beste ${formatLap(n.best)}` : 'keine gezeitete Runde'}</small></div>`).join('') : '<div>Noch keine Ausfahrt.</div>';
+        f('notes').innerHTML = notes.length ? notes.map(n => `<div>„${esc(n.text)}“<small>${setupCode(n.setup)} · ${n.n ? `${n.n} Rd, beste ${formatLap(n.best)}` : 'keine gezeitete Runde'}</small></div>`).join('') : '<div>Noch keine Ausfahrt.</div>';
       }
     }
     // Ausgefallen: nichts mehr einstellbar
@@ -2123,16 +2170,26 @@ $('protestBody').addEventListener('click', e => {
   }
 });
 $('protestClose').addEventListener('click', () => { if (protestPlayer) { protestPlayer.destroy(); protestPlayer = null; } $('protestView').classList.add('hidden'); });
+// Setup kurz: FF6 HF6 BF5 …
+const setupCode = st => Object.entries(SETUP_KEYS).map(([k, d]) => `${d.short}${st[k] ?? st.wing ?? '–'}`).join(' ');
+// Ingenieure (Saison): Einschätzung trocken und nass, genauer mit besseren Ingenieuren
+function engEst(id) {
+  if (!(wk.season && season)) return '';
+  const s = wk.setup[id], seed = `${wk.seed}${JSON.stringify(s)}`;
+  const dry = engineerEstimate(season, setupScore(race.track, s, 0), seed), wet = engineerEstimate(season, setupScore(race.track, s, 1), seed + 'w');
+  return dry === null ? '' : ` · Ingenieure: trocken ~${dry} % · nass ~${wet} %`;
+}
+const wetHint = () => `🌧 Regen-Abstimmung (Erfahrungswerte der Ingenieure): ${Object.entries(WET_SHIFT).map(([k, v]) => `${SETUP_KEYS[k].name} ${v > 0 ? '+' : '−'}${Math.abs(v)}`).join(', ')} – ungefähr. Ein Regen-Setup ist im Nassen schnell, im Trockenen langsam.`;
 // Debriefing nach dem Training: alle Rückmeldungen der Fahrer je Stint, Setup fürs Qualifying anpassen
 function debriefHtml() {
   return `<div class="pw-label">🔧 DEBRIEFING – SETUP FÜR QUALIFYING UND RENNEN</div>` + playerCars(race).map(c => {
     const notes = wk.notes[c.id] || [];
-    const est = wk.season && season ? engineerEstimate(season, setupScore(race.track, wk.setup[c.id]), `${wk.seed}${JSON.stringify(wk.setup[c.id])}`) : null;
-    return `<div class="pw-mcard pw-debrief" data-dcar="${c.id}"><b>${esc(c.driver.first)} ${esc(c.driver.last)}</b>${est !== null ? `<small>Ingenieure: Setup ~${est} %</small>` : ''}
-      <div class="pw-notes">${notes.length ? notes.map((n, i) => `<div><i>Stint ${i + 1}</i> „${esc(n.text)}“<small>Flügel ${n.setup.wing} · Balance ${n.setup.bal} · Federung ${n.setup.stiff} · ${n.n ? `${n.n} Rd, beste ${formatLap(n.best)}` : 'keine gezeitete Runde'}</small></div>`).join('') : '<div>Keine Ausfahrt – keine Rückmeldung.</div>'}</div>
+    const est = engEst(c.id);
+    return `<div class="pw-mcard pw-debrief" data-dcar="${c.id}"><b>${esc(c.driver.first)} ${esc(c.driver.last)}</b>${est ? `<small>${est.replace(' · ', '')}</small>` : ''}
+      <div class="pw-notes">${notes.length ? notes.map((n, i) => `<div><i>Stint ${i + 1}</i> „${esc(n.text)}“<small>${setupCode(n.setup)} · ${n.n ? `${n.n} Rd, beste ${formatLap(n.best)}` : 'keine gezeitete Runde'}</small></div>`).join('') : '<div>Keine Ausfahrt – keine Rückmeldung.</div>'}</div>
       <div class="pw-setup">${Object.entries(SETUP_KEYS).map(([k, d]) => `<div class="pw-srow"><span>${d.name}</span><button data-dset="${k}" data-d="-1">−</button><b>${wk.setup[c.id][k]}</b><button data-dset="${k}" data-d="1">+</button><small>${d.lo} ↔ ${d.hi}</small></div>`).join('')}</div>
     </div>`;
-  }).join('') + '<div class="pw-hint">Ab dem Qualifying gilt Parc fermé – danach lässt sich das Setup nicht mehr ändern.</div>';
+  }).join('') + `<div class="pw-hint">${wetHint()}</div><div class="pw-hint">Ab dem Qualifying gilt Parc fermé – danach lässt sich das Setup nicht mehr ändern. Die Wettervorhersage für Qualifying und Rennen siehst du über das Wettersymbol oben.</div>`;
 }
 $('resultBody').addEventListener('click', e => {
   const b = e.target.closest('[data-dset]');
@@ -2171,6 +2228,7 @@ $('newRaceBtn').addEventListener('click', () => {
     wk.used = { wing: (wk.used ? wk.used.wing : 0) + u.wing, chassis: (wk.used ? wk.used.chassis : 0) + u.chassis };
     if (currentKind(wk) === 'race') wk.moods = Object.fromEntries(playerCars(race).map(c => [c.id, Math.round(c.mood ?? 70)]));
   }
+  if (wk.season) { wk.pu = wk.pu || {}; for (const c of playerCars(race)) if (c.puWear !== undefined) wk.pu[c.id] = c.puWear; }
   finishSession(wk, race);
   if (wk.idx >= wk.seq.length) {
     // Wochenende vorbei: in der Saison Punkte übernehmen, Spielstand löschen
@@ -2183,6 +2241,7 @@ $('newRaceBtn').addEventListener('click', () => {
       if (!season.mgmt) initManagement(season, TEAMS, DRIVERS);
       const last = season.results[season.results.length - 1];
       const moneyBefore = season.mgmt.money;
+      for (const [id, w] of Object.entries(wk.pu || {})) if (season.mgmt.drivers[id]) puCar(season.mgmt, id).wear = w;
       const notes = afterWeekend(season, TEAMS, DRIVERS, last, wk.used || {}, wk.moods || {});
       const after = teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1;
       notes.push(...careerAfterWeekend(season, TEAMS, season.mgmt.report.r.pts, expectedPoints(season.mgmt.board.target)));
@@ -2354,6 +2413,7 @@ $('zoomResetBtn').addEventListener('click', () => { if (map.follow) map.stopFoll
 function applyTower() {
   $('tower').classList.toggle('hidden', !settings.showTower);
   $('towerBtn').classList.toggle('active', settings.showTower);
+  $('wmBtn').classList.toggle('hidden', !(wk && wk.season && season));
 }
 $('towerBtn').addEventListener('click', () => { settings.showTower = !settings.showTower; saveSettings(settings); applyTower(); refreshUi(); });
 applyTower();

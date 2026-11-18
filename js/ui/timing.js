@@ -37,6 +37,16 @@ export function sectorStatus(car) {
   return '<span class="badge badge-pit">IN</span>';
 }
 
+// Training/Qualifying: letzte und beste gezeitete Runde mit Reifen
+function sessLaps(car) {
+  const laps = car.sLaps || [];
+  const tyre = l => l && l.compound ? ` <i class="pw-tyre ${l.compound}">${l.compound}</i>` : '';
+  const last = laps[laps.length - 1];
+  const best = laps.filter(l => l.valid).reduce((b, l) => (!b || l.time < b.time ? l : b), null);
+  return `<div><span>Letzte Runde</span>${last ? last.label + tyre(last) : '–'}</div>
+        <div><span>Beste Runde</span>${best ? best.label + tyre(best) : '–'}</div>`;
+}
+
 export function renderTiming(el, race, { gapMode, selected }) {
   let st = race.standings();
   // Qualifying: Ausgeschiedene werden ab dem nächsten Abschnitt nicht mehr angezeigt
@@ -80,8 +90,8 @@ export function renderTiming(el, race, { gapMode, selected }) {
       <div class="row-details">
         <div><span>Fahrer</span>#${car.driver.number} ${car.driver.first} ${car.driver.last}</div>
         <div><span>Team</span>${car.team.name}</div>
-        <div><span>Letzte Runde</span>${formatLap(car.lastLap)}</div>
-        <div><span>Beste Runde</span>${formatLap(car.bestLap)}</div>
+        ${race.isSession ? sessLaps(car) : `<div><span>Letzte Runde</span>${formatLap(car.lastLap)}</div>
+        <div><span>Beste Runde</span>${formatLap(car.bestLap)}</div>`}
         <div><span>Reifen</span>${COMPOUNDS[car.compound].name}, ${car.tyreAge} Rd</div>
         <div><span>Stopps</span>${car.stops}</div>
         ${car.retired ? `<div><span>Ausfall</span>${car.dnf}</div>` : ''}

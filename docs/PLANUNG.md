@@ -476,3 +476,27 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 ### v31 – Fix: Strategie-Übersicht und Rennleitung öffnen sich sichtbar
 - #stratView und #protestView lagen im DOM vor dem Ergebnisfenster (gleicher z-index) und öffneten sich dahinter –
   sichtbar erst, wenn das Ergebnis geschlossen wurde. Jetzt z-index 20.
+
+### v33 – WM live, Antriebseinheit je Auto, Sponsor-Laufzeiten, neues Setup (6 Werte, Regen/Trocken), Windschatten überall
+- Fehler: Training bei Restnässe > 15 % – gewählte Trockenreifen wurden durch Regenreifen ersetzt. Eigene Autos fahren
+  jetzt immer mit der gewählten Mischung (KI wählt weiter nach Nässe).
+- Wetterfenster: Regen jetzt und Nässe der Strecke aktualisieren sich live.
+- ZEITEN-Details in Training/Qualifying: letzte und beste Runde mit Reifenmischung (sLaps.compound).
+- Saison: Knopf „🏆 WM“ auf der Karte in allen Sessions; im Sprint/Rennen live voraussichtlicher Stand (Punkte nach
+  aktueller Platzierung, inkl. Sprint am Rennsonntag), ▲/▼ und +Punkte; Aktualisierung jede Sekunde.
+- Antriebseinheit je Auto (m.puCars[id] = { used, wear }): Verschleiß pro gefahrenem Meter (Renndistanz ≈ 12 %),
+  Pushen 1,35×, Attacke 1,7×, Overtake-ERS 1,1×, schnelle Runden 1,3×, Neutralisierung 0,5×. Leistungsverlust
+  0,0045 s/Runde je % (50 % ≈ 0,22 s), Zuverlässigkeit sinkt ab 60 %. Anzeige und Tausch je Fahrer unter Auto & Teile,
+  5. Einheit eines Fahrers = 10 Startplätze für ihn. Neue Saison: neues Kontingent.
+- Sponsoren: Laufzeit (Rennen) wird mitverhandelt („Kürzer/Länger ±4“). Verdeckter Wunschbereich je Sponsor; im Bereich ok,
+  knapp daneben Gegenangebot (Grenze), weit daneben Ablehnung; Interesse 0 = Abbruch. Verträge laufen nach Ablauf aus
+  (alte Verträge: bis Saisonende). Anzeige „noch X Rennen“.
+- Setup neu: Frontflügel, Heckflügel, Bodenfreiheit, Federung, Differenzial, Bremsbalance. Optimum je Strecke getrennt für
+  trocken und nass (Regen grob: Flügel +3/+3, höher +2, weicher −3, Diff −2, BB −1, je Strecke leicht anders).
+  Wirkung wird laufend nach der Nässe gemischt (setupLive): Regen-Setup schnell im Nassen, langsam im Trockenen
+  (Unterschied ~0,3–0,6 s). Start-Setup aus dem Simulator (±3 je Wert, Ø 0,29 s Verlust, KI Ø 0,24 s).
+  Fahrer beschreiben Symptome (z. B. Untersteuern kann Frontflügel, Bremsbalance oder Differenzial sein), Rückmeldung
+  zu den aktuellen Bedingungen. Ingenieure (Saison): Einschätzung trocken und nass. Alte Spielstände werden umgestellt.
+- Windschatten hinter jedem Auto: Rennen/Sprint auf Geraden 0,2–1,0 s dahinter +1,2 % Tempo und bessere Überholchance,
+  in Kurven bis 1,2 s verwirbelte Luft −0,5 %. Training/Qualifying: auf schnellen Runden zufälliger Windschatten auf
+  Geraden, verwirbelte Luft nur noch in Kurven. Test (9 Rennen): Überholungen gleich, Feld etwas weiter auseinander.

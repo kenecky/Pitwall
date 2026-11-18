@@ -147,10 +147,7 @@ export class WeatherPanel {
       return `<tr><td>+${min} min</td><td class="wx-ico">${i}</td><td>${w}</td></tr>`;
     }).join('');
     this.body.innerHTML = `
-      <div class="wx-now">
-        <div><span class="setup-label">JETZT</span><b>${icon} ${word}</b></div>
-        <div><span class="setup-label">STRECKE</span><b>${wet < 8 ? 'trocken' : wet < 30 ? 'feucht' : wet < 70 ? 'nass' : 'sehr nass'} · ${wet} %</b></div>
-      </div>
+      <div class="wx-now">${this.nowHtml(icon, word, wet)}</div>
       <div class="setup-label">VORHERSAGE AN DER STRECKE</div>
       <table class="wx-table">${rows}</table>
       <div class="setup-label">REGENRADAR</div>
@@ -161,6 +158,19 @@ export class WeatherPanel {
         <span><i style="background:#f5d90a"></i>viel</span><span><i style="background:#ff8a1f"></i>sehr viel</span><span><i style="background:#e01e1e"></i>sehr stark</span>
       </div>`;
     this.drawRadar();
+  }
+
+  nowHtml(icon, word, wet) {
+    return `<div><span class="setup-label">JETZT</span><b>${icon} ${word}</b></div>
+        <div><span class="setup-label">STRECKE</span><b>${wet < 8 ? 'trocken' : wet < 30 ? 'feucht' : wet < 70 ? 'nass' : 'sehr nass'} · ${wet} %</b></div>`;
+  }
+  // Live: Regen jetzt und Nässe der Strecke aktualisieren (ohne das Fenster neu aufzubauen)
+  updateNow() {
+    const race = this.getRace(), el = this.body.querySelector('.wx-now');
+    if (!race || !el) return;
+    const [icon, word] = rainWord(rainAt(race.weather, Math.max(0, race.time)));
+    const html = this.nowHtml(icon, word, Math.round(race.weather.wetness * 100));
+    if (el.innerHTML !== html) el.innerHTML = html;
   }
 
   drawRadar() {

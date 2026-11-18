@@ -1,6 +1,7 @@
 // Pit Wall: Befehle des Teamchefs an seine beiden Fahrer, Rennstrategen, Boxenverlust und Rejoin-Vorhersage.
 // Die Simulation (race.js) liest car.paceMode, car.ersMode, car.tyreWear, car.plan, car.letBy und race.teamOrder.
 import { COMPOUNDS } from '../sim/tyres.js';
+import { setupLive } from './weekend.js';
 
 // Tempo-Anweisung: dt = Rundenzeit (s), wear = Reifenverschleiß je Runde, risk = Fehler/Aggressivität
 export const PACE = {
@@ -129,6 +130,15 @@ export function teamStep(race) {
     else last.laps = c.tyreAge;
   }
   if (race.trackSets) race.trackSets();
+  // Setup-Wirkung folgt der Nässe der Strecke (alle 2 s Simulationszeit)
+  if (race.time - (race.suT ?? -9) >= 2) { race.suT = race.time; setupLive(race); }
+  // Saison: Verschleiß der Antriebseinheit (pro gefahrenem Meter, Pushen/Attacke und schnelle Runden mehr)
+  if (race.puRate && race.phase === 'running') for (const c of race.cars) {
+    if (!c.player || c.inGarage || c.retired || c.finished || !(c.move > 0)) continue;
+    const f = race.isSession ? (c.prog && c.prog.phase === 'push' ? 1.3 : 0.75)
+      : ({ save: 0.75, normal: 1, push: 1.35, attack: 1.7 }[c.paceMode] || 1) * (c.ersMode === 'overtake' ? 1.1 : 1) * (race.neutral ? 0.5 : 1);
+    c.puWear = Math.min(100, (c.puWear || 0) + c.move * race.puRate * f);
+  }
   for (const a of race.cars) {
     if (!a.letBy) continue;
     const b = race.carById[a.letBy];

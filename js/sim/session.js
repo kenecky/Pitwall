@@ -309,6 +309,7 @@ export class Session extends Race {
     for (const c of on) {
       c.dirty = false;
       c.tow = false;
+      c.slipS = false;
       c.towing = null;
       let best = Infinity, ahead = null;
       for (const o of on) {
@@ -329,6 +330,9 @@ export class Session extends Race {
       const behindGiver = ahead && ahead.team === c.team && this.givesTow(ahead);
       const lim = behindGiver ? c.v * 0.5 : Math.max(40, c.v * 1.2);
       c.towStuck = behindGiver && best < c.v * 0.5 && !this.inTowStraight(c.d) ? (c.towStuck || 0) + DT : 0;
+      // Zufälliger Windschatten von jedem Auto vorne (auf Geraden), verwirbelte Luft in Kurven
+      if (isStraight(this.track, c.d)) { c.slipS = best > c.v * 0.2 && best < c.v * 1.0; if (c.slipS) c.trafficT = (c.trafficT || 0) + DT * 0.3; continue; }
+      c.slipS = false;
       if (best < lim) { c.dirty = true; c.trafficT = (c.trafficT || 0) + DT; }
     }
   }
@@ -439,6 +443,7 @@ export class Session extends Race {
   programFactor(car) {
     const ph = car.prog && car.prog.phase;
     if (car.tow && ph === 'push') return 1 + this.towBoost();   // im Windschatten: mehr Topspeed auf der Geraden
+    if (car.slipS && ph === 'push') return 1.012;              // zufälliger Windschatten eines anderen Autos
     if (this.givesTow(car)) {
       const t = this.towTarget(car);
       const st = this.towStraight, pos = this.towPos(car.d);
@@ -529,7 +534,9 @@ export class Session extends Race {
     if (!car.inGarage) { super.finishStop(car); return; }
     const run = car.prog.current || { compound: 'S', push: 1, fuel: 0.1 };
     const w = this.weather.wetness;
-    car.compound = w > 0.15 ? bestCompound(w, 20) : run.compound;
+    // Eigene Autos: Mischung des Teamchefs (vorher wurden bei Restnässe > 15 % immer Regenreifen montiert);
+    // KI wählt nach Nässe
+    car.compound = car.player ? run.compound : w > 0.15 ? bestCompound(w, 20) : run.compound;
     car.fuel = run.fuel;
     car.tyreAge = 0; car.tyreWear = 0;
     if (car.player && this.onPlayerTyres) this.onPlayerTyres(car);
@@ -554,7 +561,7 @@ export class Session extends Race {
     const p = car.prog;
     if (p.phase === 'push' && !car.inPit) {
       const rec = {
-        id: ++this.lapSeq, seg: this.segIdx, time: lapTime, valid: !car.compromised,
+        id: ++this.lapSeq, seg: this.segIdx, time: lapTime, valid: !car.compromised, compound: car.compound,
         label: formatLap(lapTime), compromised: Boolean(car.compromised), traffic: (car.trafficT || 0) > 1.5,
       };
       car.trafficT = 0;

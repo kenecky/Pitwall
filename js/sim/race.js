@@ -30,7 +30,7 @@ import { updateServices, svc } from './services.js';
 import { rollRaceEvents, updateEvents, rollLooseWheel } from './events.js';
 import { rollBlueFlag, rollNeutralCases, rollChicaneCut, rollPitLine, rollPitClosedEntry, rollLanguage } from './cases2.js';
 import { updateWeatherEvents } from './weatherEvents.js';
-import { energyStep, energyEdge } from './energy.js';
+import { energyStep, energyEdge, isStraight } from './energy.js';
 import { paceOf, tacticOf, moodOf } from '../team/pitwall.js';
 export { COMPOUNDS };
 
@@ -429,6 +429,8 @@ export class Race {
           if (car.pass && this.time < car.pass.until) vt *= car.pass.blue ? 1.02 : 1.06;
           if (car.yieldBlue > this.time) vt *= 0.93;           // blaue Flagge: vom Gas, Platz machen
           if (car.defendUntil > this.time) vt *= 0.985;
+          if (car.slip) vt *= 1.012;                           // Windschatten auf der Geraden
+          else if (car.dirtyAir) vt *= 0.995;                  // verwirbelte Luft in Kurven
           vt *= this.programFactor(car);                       // Sessions: Aufwärm-/Auslaufrunde
           vt *= energyStep(this, car, DT, false);              // Hybrid-Energie: Einsatz auf Geraden, Laden in Kurven
         }
@@ -542,6 +544,18 @@ export class Race {
     const phys = [...onTrack, ...(scObj ? [scObj] : [])].sort((a, b) => wrapD(tr, a.d) - wrapD(tr, b.d));
     const aheadOf = new Map();
     phys.forEach((c, i) => aheadOf.set(c, phys[(i + 1) % phys.length]));
+
+    // Windschatten und verwirbelte Luft hinter dem Vordermann (Rennen/Sprint, nur bei Grün):
+    // auf Geraden 0,2–1,0 s dahinter → Windschatten (mehr Topspeed, hilft beim Überholen),
+    // in Kurven bis ~1,2 s dahinter → verwirbelte Luft (weniger Abtrieb)
+    if (!this.isSession) for (const B of onTrack) {
+      B.slip = false; B.dirtyAir = false;
+      const A = aheadOf.get(B);
+      if (!A || A === B || A.isSC || this.neutral || this.phase !== 'running' || B.inPit || A.inPit || B.v < 30) continue;
+      const g = wrapD(tr, A.d - B.d);
+      if (isStraight(tr, B.d)) { if (g > B.v * 0.2 && g < B.v * 1.0) { B.slip = true; B.slipAt = this.time; } }
+      else if (g < B.v * 1.2) B.dirtyAir = true;
+    }
 
     // Von vorne nach hinten (Rennreihenfolge)
     const order = [...onTrack].sort((a, b) => b.d - a.d);
@@ -702,6 +716,7 @@ export class Race {
     p -= (aggressionOf(A) - 65) / 400;
     if (B.lap === 0) p += 0.12;   // Startrunde: mehr Bewegung im Feld
     p += energyEdge(B, A);        // mehr Hybrid-Energie hilft beim Überholen
+    if (B.slipAt !== undefined && this.time - B.slipAt < 2.5) p += 0.05;   // aus dem Windschatten heraus
     p *= (tacticOf(B).pass || 1) * tacticOf(A).def;   // Pit Wall: Taktik (Überholen / Verteidigen / Aufhalten)
     p *= zone.factor;
     p *= 1 - 0.35 * this.weather.wetness;   // Gischt und wenig Grip bei Nässe
