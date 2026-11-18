@@ -486,3 +486,6 @@
 .pw-wxbtn { width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; }
 /* v31: Fenster aus dem Ergebnis liegen über dem Ergebnis */
 #stratView, #protestView { z-index: 20; }
+/* v34: Fortschrittsbalken der Runde im Fahrer-Reiter */
+.pw-dtabs button .pw-tprog { position: absolute; left: 7px; right: 4px; bottom: 3px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.pw-dtabs button .pw-tprog i { display: block; height: 100%; width: 0; background: var(--tc); transition: width .3s linear; }

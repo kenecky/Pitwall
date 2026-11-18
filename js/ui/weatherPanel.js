@@ -23,49 +23,83 @@ export function rainWord(r) {
   return ['⛈', 'Sehr starker Regen'];
 }
 
-// Regenzellen (km, relativ zur Strecke) – deterministisch aus Rennen-Nr. und Regenverlauf
+// Regenzellen (km, relativ zur Strecke) – deterministisch aus Rennen-Nr. und Regenverlauf.
+// Der Wind dreht von Zeit zu Zeit (vor allem vor Schauern): Zellen ziehen auf gekrümmten Bahnen.
+// Das Radar zeigt die Zukunft nur als Hochrechnung mit dem AKTUELLEN Wind – dreht er, kommt es anders.
+const MODELS = new WeakMap();
+const T0 = -4000, T1 = 14000, STEP = 20;
 export function radarModel(race) {
-  if (race.radar) return race.radar;
+  if (MODELS.has(race)) return MODELS.get(race);
   const wx = race.weather;
   const r = createRng(((race.seed || 1) * 7919) ^ 0x51ed);
   const ang = r.range(0, Math.PI * 2);
   const speed = r.range(22, 42) / 3600;            // km/s
-  const ux = Math.cos(ang) * speed, uy = Math.sin(ang) * speed;
-  const px = -uy / speed, py = ux / speed;         // quer zur Zugrichtung
-  const cells = [];
-  for (const s of wx.showers) {
-    const t1 = s.t1, t0 = Math.max(s.t0, -1800);
+  // Winddrehungen: vor jedem Schauer eine (er kam „von der Seite“), dazu zufällige
+  const turns = [];
+  for (const sh of wx.showers) turns.push({ t: (sh.t0 + sh.t1) / 2 - r.range(500, 1500), d: (r.chance(0.5) ? 1 : -1) * r.range(0.5, 1.15) });
+  for (let i = 0, n = 1 + Math.floor(r.next() * 3); i < n; i++) turns.push({ t: r.range(-1800, 9000), d: (r.chance(0.5) ? 1 : -1) * r.range(0.25, 0.8) });
+  const angAt = t => {
+    let a = ang;
+    for (const x of turns) { const k = Math.max(0, Math.min(1, (t - x.t) / 600)); a += x.d * k * k * (3 - 2 * k); }
+    return a;
+  };
+  // Verschiebung durch den Wind seit T0 (Tabelle)
+  const n = Math.ceil((T1 - T0) / STEP) + 1, DX = new Float64Array(n), DY = new Float64Array(n);
+  for (let i = 1; i < n; i++) { const a = angAt(T0 + (i - 0.5) * STEP); DX[i] = DX[i - 1] + Math.cos(a) * speed * STEP; DY[i] = DY[i - 1] + Math.sin(a) * speed * STEP; }
+  const disp = t => {
+    const f = Math.max(0, Math.min(n - 1.001, (t - T0) / STEP)), i = Math.floor(f), k = f - i;
+    return [DX[i] + (DX[i + 1] - DX[i]) * k, DY[i] + (DY[i + 1] - DY[i]) * k];
+  };
+  const m = { ang, speed, angAt, disp, cells: [] };
+  // Zelle: Versatz (along/across im Windsystem zur Zeit tm), liegt zur Zeit tm genau dort über der Strecke
+  const add = (tm, along, across, rad, amp) => {
+    const a = angAt(tm), [dx, dy] = disp(tm);
+    m.cells.push({ tm, ox: Math.cos(a) * along - Math.sin(a) * across - dx, oy: Math.sin(a) * along + Math.cos(a) * across - dy, rad, amp });
+  };
+  for (const sh of wx.showers) {
+    const t1 = sh.t1, t0 = Math.max(sh.t0, -1800);
     const tm = (t0 + t1) / 2;
     const len = speed * (t1 - t0);                  // so lange liegt der Schauer über der Strecke
-    // viele kleinere Zellen, zur Mitte des Schauers hin kräftiger
-    const n = 9 + Math.floor(r.next() * 7);
+    const cnt = 9 + Math.floor(r.next() * 7);
     const width = r.range(2.5, 4.5);
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < cnt; i++) {
       const u = r.next() - 0.5;
       const along = u * len * 0.95;
       const across = r.gauss(width * 0.45);
       const core = 1 - Math.min(1, Math.abs(u) * 1.6 + Math.abs(across) / (width * 1.6));
-      cells.push({
-        tm, along, across, rad: r.range(0.9, 1.9),
-        amp: s.peak * (0.35 + 0.75 * core) * r.range(0.85, 1.12),
-      });
+      add(tm, along, across, r.range(0.9, 1.9), sh.peak * (0.35 + 0.75 * core) * r.range(0.85, 1.12));
     }
-    // Sicherstellen, dass es an der Strecke so stark regnet wie im Regenverlauf
-    cells.push({ tm, along: 0, across: 0, rad: 1.6, amp: s.peak });
+    add(tm, 0, 0, 1.6, sh.peak);   // an der Strecke so stark wie im Regenverlauf
   }
-  // Zusätzliche Schauer, die an der Strecke vorbeiziehen (nur bei unbeständigem Wetter)
+  // Schauer, die an der Strecke vorbeiziehen (auch mit drehendem Wind nie darüber)
   if (wx.showers.length) {
     const extra = 3 + Math.floor(r.next() * 4);
     for (let i = 0; i < extra; i++) {
       const side = r.chance(0.5) ? 1 : -1;
-      const tm = r.range(-1200, 4800), across = side * r.range(4, 8), amp = r.range(0.2, 0.85);
-      for (let k = 0; k < 4; k++) {
-        cells.push({ tm, along: r.range(-2, 2), across: across + r.range(-1, 1), rad: r.range(0.7, 1.5), amp: amp * r.range(0.6, 1) });
+      const tm = r.range(-1200, 4800), amp = r.range(0.2, 0.85);
+      let across = side * r.range(4, 8);
+      const parts = [0, 1, 2, 3].map(() => ({ al: r.range(-2, 2), ac: r.range(-1, 1), rad: r.range(0.7, 1.5), amp: amp * r.range(0.6, 1) }));
+      // Mindestabstand zur Strecke über die ganze Lebensdauer prüfen, sonst weiter nach außen
+      for (let tries = 0; tries < 6; tries++) {
+        const a = angAt(tm), [dx, dy] = disp(tm);
+        const ox = -Math.sin(a) * across - dx, oy = Math.cos(a) * across - dy;
+        let min = Infinity;
+        for (let t = tm - 4000; t <= tm + 4000; t += 200) { const [x, y] = disp(t); min = Math.min(min, Math.hypot(ox + x, oy + y)); }
+        if (min > 4.5) break;
+        across *= 1.5;
       }
+      for (const q of parts) add(tm, q.al, across + q.ac, q.rad, q.amp);
     }
   }
-  race.radar = { ux, uy, px, py, cells, ang };
-  return race.radar;
+  MODELS.set(race, m);
+  return m;
+}
+
+// Zellenmitte zur Zeit t – ab „jetzt“ (tn) nur hochgerechnet mit dem aktuellen Wind
+function cellPos(m, c, t, tn) {
+  if (tn === undefined || t <= tn) { const [x, y] = m.disp(t); return [c.ox + x, c.oy + y]; }
+  const [x, y] = m.disp(tn), a = m.angAt(tn);
+  return [c.ox + x + Math.cos(a) * m.speed * (t - tn), c.oy + y + Math.sin(a) * m.speed * (t - tn)];
 }
 
 // Weiches Wertrauschen (zieht mit dem Wind) für eine natürliche, fleckige Struktur
@@ -81,19 +115,17 @@ function noise(x, y) {
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
-function intensityAt(m, x, y, t) {
+export function intensityAt(m, x, y, t, tn) {
   let v = 0;
   for (const c of m.cells) {
-    // Zellenmitte zur Zeit t
-    const dt = t - c.tm;
-    const cx = m.ux * dt + (m.ux / Math.hypot(m.ux, m.uy)) * c.along + m.px * c.across;
-    const cy = m.uy * dt + (m.uy / Math.hypot(m.ux, m.uy)) * c.along + m.py * c.across;
+    const [cx, cy] = cellPos(m, c, t, tn);
     const d2 = (x - cx) ** 2 + (y - cy) ** 2;
     if (d2 > c.rad * c.rad * 9) continue;
     v = Math.max(v, c.amp * Math.exp(-d2 / (c.rad * c.rad)));
   }
   if (v < 0.02) return 0;
-  const nx = (x - m.ux * t) / 1.3, ny = (y - m.uy * t) / 1.3;
+  const [sx, sy] = m.disp(Math.min(t, tn ?? t));
+  const nx = (x - sx) / 1.3, ny = (y - sy) / 1.3;
   const tex = 0.72 + 0.28 * noise(nx, ny) + 0.12 * (noise(nx * 2.7, ny * 2.7) - 0.5);
   return Math.min(1, v * tex);
 }
@@ -142,13 +174,15 @@ export class WeatherPanel {
     const nowR = rainAt(wx, now);
     const [icon, word] = rainWord(nowR);
     const wet = Math.round(wx.wetness * 100);
+    const m = radarModel(race);
     const rows = [5, 15, 30, 60].map(min => {
-      const [i, w] = rainWord(rainAt(wx, now + min * 60));
+      // Prognose: Hochrechnung mit dem aktuellen Wind – dreht er, stimmt sie nicht mehr
+      const [i, w] = rainWord(Math.max(0, ...[[0, 0], [0.8, 0], [-0.8, 0], [0, 0.8], [0, -0.8]].map(([x, y]) => intensityAt(m, x, y, now + min * 60, now))));
       return `<tr><td>+${min} min</td><td class="wx-ico">${i}</td><td>${w}</td></tr>`;
     }).join('');
     this.body.innerHTML = `
       <div class="wx-now">${this.nowHtml(icon, word, wet)}</div>
-      <div class="setup-label">VORHERSAGE AN DER STRECKE</div>
+      <div class="setup-label">PROGNOSE AN DER STRECKE (AKTUELLER WIND)</div>
       <table class="wx-table">${rows}</table>
       <div class="setup-label">REGENRADAR</div>
       <div class="wx-radar"><canvas id="wxRadar"></canvas><span id="wxTime" class="wx-time"></span><span class="wx-scale">${VIEW_KM} km</span></div>
@@ -205,7 +239,7 @@ export class WeatherPanel {
     for (let j = 0; j < gh; j++) {
       for (let i = 0; i < gw; i++) {
         const x = (i / gw - 0.5) * VIEW_KM, y = (j / gh - 0.5) * viewH;
-        const c = colorFor(intensityAt(m, x, y, t));
+        const c = colorFor(intensityAt(m, x, y, t, Math.max(0, race.time)));
         if (!c) continue;
         const o = (j * gw + i) * 4;
         img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = c[3];
@@ -231,7 +265,7 @@ export class WeatherPanel {
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.8; ctx.stroke();
     // Windrichtung
     const ax = rect.width - 26, ay = 26;
-    ctx.save(); ctx.translate(ax, ay); ctx.rotate(m.ang);
+    ctx.save(); ctx.translate(ax, ay); ctx.rotate(m.angAt(Math.max(0, race.time)));
     ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(10, 0); ctx.lineTo(5, -4); ctx.moveTo(10, 0); ctx.lineTo(5, 4); ctx.stroke();
     ctx.restore();

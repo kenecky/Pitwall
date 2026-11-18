@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore, WET_SHIFT } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 33;
+export const VERSION = 34;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -315,7 +315,7 @@ function resetUi() {
 
 // Auto kommt nach einer Ausfahrt in die Garage: Rückmeldung des Fahrers (Training) bzw. Rundenzeit (Qualifying)
 function onGarage(car) {
-  if (race.kind === 'fp' && settings.speed !== 1 && !ff) setSpeed(1);   // Training: zurück in der Box → 1×
+  if (race.isSession && settings.speed !== 1 && !ff) setSpeed(1);   // Training/Qualifying: zurück in der Box → 1×
   const laps = (car.runLaps || []).filter(l => l.valid);
   const red = car.redAbort;
   car.redAbort = false;
@@ -1337,7 +1337,7 @@ function buildWall() {
   ui.built = race;
   if (!ui.circleCar || !race.carById[ui.circleCar]) ui.circleCar = cars[0].id;
   if (!ui.wallCar || !race.carById[ui.wallCar]) ui.wallCar = cars[0].id;
-  $('wall').innerHTML = `<div class="pw-dtabs">${cars.map(c => `<button data-wtab="${c.id}" style="--tc:${c.team.color}"><b>${esc(c.driver.last)}</b><span data-wt="${c.id}"></span></button>`).join('')}</div>` + cars.map(c => `
+  $('wall').innerHTML = `<div class="pw-dtabs">${cars.map(c => `<button data-wtab="${c.id}" style="--tc:${c.team.color}"><b>${esc(c.driver.last)}</b><span data-wt="${c.id}"></span><i class="pw-tprog"><i></i></i></button>`).join('')}</div>` + cars.map(c => `
     <div class="pw-car" data-car="${c.id}" style="--tc:${c.team.color}">
       <div class="pw-head">
         <span class="pw-pos" data-f="pos">–</span>
@@ -1412,6 +1412,7 @@ function renderWall() {
     const tpos = car.retired ? 'OUT' : `P${st.indexOf(car) + 1}`;
     const tyreTab = car.retired ? '' : ` · <i class="pw-tyre ${car.compound}">${car.compound}</i> ${tyreLaps(car)} Rd`;
     tab.querySelector('span').innerHTML = `${tpos}${tyreTab}${tmsg ? ' <i class="pw-dot">📻</i>' : ''}${car.redQueued && !car.redTyre ? ' <i class="pw-dot red">REIFEN?</i>' : ''}`;
+    tabProgress(tab, car);
     // Rote Flagge: Reifenwahl in der Boxengasse
     const red = el.querySelector('[data-f="red"]');
     const redOn = Boolean(car.redQueued && race.neutral && race.neutral.type === 'red');
@@ -1686,6 +1687,18 @@ const tyreLaps = car => (car.curSet && car.curSet.lapCount !== undefined ? car.c
 
 const mmss = t => `${Math.floor(Math.max(0, t) / 60)}:${String(Math.floor(Math.max(0, t) % 60)).padStart(2, '0')}`;
 
+// Fortschrittsbalken im Reiter: wie weit ist der Fahrer auf der Runde (Box/Garage = leer)
+function tabProgress(tab, car) {
+  const bar = tab.querySelector('.pw-tprog i');
+  if (!bar) return;
+  const L = race.track.L;
+  const f = car.retired || car.inGarage || car.inPit || car.finished || (!race.isSession && race.preStart) ? 0 : ((car.d % L) + L) % L / L;
+  const w = Math.round(f * 1000) / 10;
+  const prev = Number(bar.dataset.w || 0);
+  bar.style.transition = w < prev ? 'none' : '';   // über die Ziellinie: ohne Rücklauf-Animation
+  bar.style.width = `${w}%`;
+  bar.dataset.w = w;
+}
 // Sektor-Quadrate im Reiter (wie in ZEITEN)
 function tabSecs(car) {
   if (!car.prog) return '';
@@ -1738,7 +1751,7 @@ function buildSessionWall() {
   ui.built = race;
   if (!ui.wallCar || !race.carById[ui.wallCar]) ui.wallCar = cars[0].id;
   const fp = race.kind === 'fp';
-  $('wall').innerHTML = `<div class="pw-dtabs">${cars.map(c => `<button data-wtab="${c.id}" style="--tc:${c.team.color}"><b>${esc(c.driver.last)}</b><span data-wt="${c.id}"></span></button>`).join('')}</div>` + cars.map(c => `
+  $('wall').innerHTML = `<div class="pw-dtabs">${cars.map(c => `<button data-wtab="${c.id}" style="--tc:${c.team.color}"><b>${esc(c.driver.last)}</b><span data-wt="${c.id}"></span><i class="pw-tprog"><i></i></i></button>`).join('')}</div>` + cars.map(c => `
     <div class="pw-car" data-car="${c.id}" style="--tc:${c.team.color}">
       <div class="pw-head">
         <span class="pw-pos" data-f="pos">–</span>
@@ -1783,7 +1796,11 @@ function renderSessionWall() {
     const i = st.indexOf(car);
     const tab = $('wall').querySelector(`[data-wtab="${car.id}"]`);
     tab.classList.toggle('on', car.id === ui.wallCar);
-    tab.querySelector('span').innerHTML = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? 'Garage' : `<i class="pw-tyre ${car.compound}">${car.compound}</i> ${tyreLaps(car)} Rd ${tabSecs(car)}`}`;
+    // In der Garage: der gewählte (aufgezogene) Satz – wechselt sofort mit der Auswahl
+    const gset = car.inGarage ? runSet(car) : null, gc = car.inGarage ? runCfg(car).c : car.compound;
+    const glaps = gset ? (gset.lapCount !== undefined ? gset.lapCount : Math.round(gset.laps)) : 0;
+    tab.querySelector('span').innerHTML = car.retired ? 'AUSFALL' : `P${i + 1} · ${car.inGarage ? `Garage <i class="pw-tyre ${gc}">${gc}</i> ${gset ? (glaps ? `${glaps} Rd` : 'neu') : '–'}` : `<i class="pw-tyre ${car.compound}">${car.compound}</i> ${tyreLaps(car)} Rd ${tabSecs(car)}`}`;
+    tabProgress(tab, car);
     // Renningenieur im Qualifying: reicht die Zeit für den nächsten Abschnitt?
     const qa = qualiAssess(car);
     const qel = f('qa');

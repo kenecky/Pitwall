@@ -1048,6 +1048,8 @@ export class Race {
   }
 
   standings() {
+    // Vor dem Start (Formationsrunde, Aufstellung): Reihenfolge der Startaufstellung, nicht der Position auf der Strecke
+    if (this.preStart && !this.isSession) return [...this.cars].sort((a, b) => (a.retired - b.retired) || (a.gridPos || 99) - (b.gridPos || 99));
     return [...this.cars].sort((a, b) => {
       if (a.retired !== b.retired) return a.retired ? 1 : -1;
       const da = this.raceDist(a), db = this.raceDist(b);

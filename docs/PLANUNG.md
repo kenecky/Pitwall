@@ -500,3 +500,16 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Windschatten hinter jedem Auto: Rennen/Sprint auf Geraden 0,2–1,0 s dahinter +1,2 % Tempo und bessere Überholchance,
   in Kurven bis 1,2 s verwirbelte Luft −0,5 %. Training/Qualifying: auf schnellen Runden zufälliger Windschatten auf
   Geraden, verwirbelte Luft nur noch in Kurven. Test (9 Rennen): Überholungen gleich, Feld etwas weiter auseinander.
+
+### v34 – Startplätze vor dem Start, Reiter mit Reifen/Fortschritt, 1× bei Rückkehr in die Box, drehender Wind
+- Fehler: Vor dem Start (Strategie, Formationsrunde, Aufstellung) zeigte die Position die Reihenfolge auf der Strecke
+  (z. B. P17 statt P1). standings() liefert vor dem Start jetzt die Startaufstellung.
+- Fahrer-Reiter in Training/Qualifying: in der Garage der gewählte (aufgezogene) Satz mit Mischung und Runden („neu“),
+  ändert sich sofort mit der Auswahl.
+- Fortschrittsbalken unten im Reiter (Rennen und Sessions): Position auf der Runde, leer in Box/Garage, live.
+- Tempo: In allen Sessions (Training, Qualifying, Sprint-Quali) schaltet die Rückkehr eines eigenen Fahrers in die
+  Garage auf 1× (vorher nur im Training).
+- Regenradar: Der Wind dreht (vor jedem Schauer eine Drehung von 30–65°, dazu zufällige). Zellen ziehen auf gekrümmten
+  Bahnen; die Zukunft (Zeitregler) und die Prognose-Tabelle sind nur eine Hochrechnung mit dem aktuellen Wind.
+  Test (40 Wetterlagen): 30-min-Prognose verpasst einen Teil der Schauer. Vorbeiziehende Schauer bleiben auch bei
+  Winddrehung ≥ 4,5 km von der Strecke weg.
