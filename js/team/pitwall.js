@@ -397,6 +397,34 @@ export function strategyOptions(race, car, wk = null) {
   return [mk(A, 'A'), mk(B, 'B')];
 }
 
+// Eigene/angepasste Strategie bewerten: gerechnete Zeit (wie bei den Vorschlägen) und Warnungen
+export function planTime(race, car, wk, s) {
+  const laps = race.laps, w = race.wear || 1, loss = pitLoss(race, car);
+  const stops = [...s.stops].sort((a, b) => a.lap - b.lap);
+  const pat = [s.start, ...stops.map(x => x.compound)];
+  const ends = [...stops.map(x => x.lap), laps];
+  const warn = [];
+  const taken = new Set();
+  let t = 0, from = 0;
+  pat.forEach((c, i) => {
+    const n = ends[i] - from;
+    let age0 = 0;
+    if (wk && wk.sets[car.id]) {
+      const st = wk.sets[car.id].filter(x => x.c === c && !taken.has(x)).sort((a, b) => a.laps - b.laps)[0];
+      if (st) { taken.add(st); age0 = st.laps; } else warn.push(`Kein Satz ${COMPOUNDS[c].name} mehr im Kontingent.`);
+    }
+    if (n < 1) warn.push(`Stint ${i + 1} ist zu kurz.`);
+    for (let a = 0; a < n; a++) { const age = age0 + a * w; t += tyreLoss(c, age) + (age > COMPOUNDS[c].cliff * 0.95 ? 0.8 : 0); }
+    if (!COMPOUNDS[c].wet && age0 + n * w > COMPOUNDS[c].cliff) warn.push(`${COMPOUNDS[c].name} in Stint ${i + 1}: ${n} Runden – über der Verschleißgrenze (~${Math.round(Math.max(1, COMPOUNDS[c].cliff - age0) / w)} Rd).`);
+    if (age0 < 0.5) t += COMPOUNDS[c].warm || 0;
+    from = ends[i];
+  });
+  t += stops.length * loss;
+  const dry = pat.filter(c => !COMPOUNDS[c].wet);
+  if (race.kind !== 'sprint' && race.weather.wetness < 0.2 && pat.every(c => !COMPOUNDS[c].wet) && new Set(dry).size < 2) warn.push('Regel: Im Rennen müssen zwei verschiedene Trockenmischungen gefahren werden.');
+  return { t, warn };
+}
+
 export function applyStrategy(race, car, s) {
   car.compound = s.start;
   car.usedCompounds = new Set([s.start]);

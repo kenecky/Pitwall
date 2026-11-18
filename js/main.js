@@ -36,7 +36,7 @@ import {
 import {
   PACE, PACE_ORDER, ERS, ERS_ORDER, STRATEGISTS, playerCars, setPace, setErs, callBox, cancelBox, tooLateForBox, tyreLife, adviceFor,
   lapsLeftOnTyres, nextStop, stopDue, shiftStop, dropStop, setStopCompound, addStop, setTeamOrder, swapCars, teamStep,
-  rejoin, pitLoss, timeOf, circleAngle, lapTime, strategyOptions, applyStrategy, freshGain, fmt, TACTIC, TACTIC_ORDER, setTactic, redTyres,
+  rejoin, pitLoss, timeOf, circleAngle, lapTime, strategyOptions, applyStrategy, planTime, freshGain, fmt, TACTIC, TACTIC_ORDER, setTactic, redTyres,
 } from './team/pitwall.js';
 import { radioStep, answer, openMessage, ownCall, OWN_CALLS, moodLabel } from './team/radio.js';
 
@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore, WET_SHIFT } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 34;
+export const VERSION = 35;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -414,14 +414,15 @@ function renderResume() {
 // ---------- Saison-Übersicht ----------
 let seasonTab = 'drivers';
 // Live-WM während des Wochenendes: Punkte aus dem Sprint (falls schon gefahren) und dem laufenden Rennen/Sprint
+// base: schon gefahrener Sprint (fest eingerechnet) · add: Punkte des laufenden Sprints/Rennens (live, „+25“)
 function liveWeekendPts() {
   if (!season || !wk || !wk.season || !race) return null;
-  const add = {};
-  const give = (id, p) => { if (p) add[id] = (add[id] || 0) + p; };
-  if (wk.results.sprint && race.kind !== 'sprint') for (const r of wk.results.sprint) if (!r.retired && !r.dsq) give(r.id, SPRINT_PTS[r.pos - 1] || 0);
+  const base = {}, add = {};
+  const give = (o, id, p) => { if (p) o[id] = (o[id] || 0) + p; };
+  if (wk.results.sprint && race.kind !== 'sprint') for (const r of wk.results.sprint) if (!r.retired && !r.dsq) give(base, r.id, SPRINT_PTS[r.pos - 1] || 0);
   const live = !race.isSession && !race.preStart && (race.kind === 'race' || race.kind === 'sprint');
-  if (live) race.standings().filter(c => !c.retired && !c.dsq).forEach((c, i) => give(c.id, (race.kind === 'sprint' ? SPRINT_PTS : POINTS)[i] || 0));
-  return Object.keys(add).length || live ? { add, live } : null;
+  if (live) race.standings().filter(c => !c.retired && !c.dsq).forEach((c, i) => give(add, c.id, (race.kind === 'sprint' ? SPRINT_PTS : POINTS)[i] || 0));
+  return Object.keys(base).length || live ? { base, add, live } : null;
 }
 let seasonLive = false;
 function showSeason(notes = [], live = false) {
@@ -443,14 +444,15 @@ function seasonTabHtml(seasonTab) {
   if (lw && seasonTab !== 'calendar') {
     // Voraussichtlicher Stand nach diesem Wochenende (live nach aktuellen Platzierungen)
     const arrow = (a, b) => a < b ? `<small class="pos">▲${b - a}</small>` : a > b ? `<small class="neg">▼${a - b}</small>` : '';
-    const head = `<div class="pw-hint">${lw.live ? '🔴 LIVE – voraussichtlicher Stand nach den aktuellen Platzierungen' : 'Stand inklusive Sprint'}</div>`;
+    const head = `<div class="pw-hint">${lw.live ? `🔴 LIVE – voraussichtlicher Stand nach den aktuellen Platzierungen${Object.keys(lw.base).length ? ' (Sprint schon eingerechnet)' : ''}` : 'Stand inklusive Sprint'}</div>`;
     if (seasonTab === 'drivers') {
-      const before = driverStandings(season, DRIVERS);
+      const before = driverStandings(season, DRIVERS).map(x => ({ ...x, pts: x.pts + (lw.base[x.d.id] || 0) })).sort((a, b) => b.pts - a.pts || b.wins - a.wins);
       const after = before.map(x => ({ ...x, now: lw.add[x.d.id] || 0, pts: x.pts + (lw.add[x.d.id] || 0) })).sort((a, b) => b.pts - a.pts || b.wins - a.wins);
       return head + `<table class="pw-res"><tbody>${after.map((x, i) => `<tr class="${x.d.team === season.teamId ? 'mine' : ''}"><td>${i + 1} ${arrow(i, before.findIndex(y => y.d.id === x.d.id))}</td><td class="tc" style="background:${TEAM_BY_ID[x.d.team].color}"></td><td>${esc(x.d.first[0])}. ${esc(x.d.last)}</td><td>${esc(TEAM_BY_ID[x.d.team].short)}</td><td style="text-align:right">${x.now ? `<small class="pos">+${x.now}</small>` : ''}</td><td style="text-align:right"><b>${x.pts}</b></td></tr>`).join('')}</tbody></table>`;
     }
-    const before = teamStandings(season, TEAMS);
-    const tAdd = t => DRIVERS.filter(d => d.team === t.id).reduce((a, d) => a + (lw.add[d.id] || 0), 0);
+    const tSum = (t, o) => DRIVERS.filter(d => d.team === t.id).reduce((a, d) => a + (o[d.id] || 0), 0);
+    const before = teamStandings(season, TEAMS).map(x => ({ ...x, pts: x.pts + tSum(x.t, lw.base) })).sort((a, b) => b.pts - a.pts);
+    const tAdd = t => tSum(t, lw.add);
     const after = before.map(x => ({ ...x, now: tAdd(x.t), pts: x.pts + tAdd(x.t) })).sort((a, b) => b.pts - a.pts);
     return head + `<table class="pw-res"><tbody>${after.map((x, i) => `<tr class="${x.t.id === season.teamId ? 'mine' : ''}"><td>${i + 1} ${arrow(i, before.findIndex(y => y.t.id === x.t.id))}</td><td class="tc" style="background:${x.t.color}"></td><td>${esc(x.t.name)}</td><td style="text-align:right">${x.now ? `<small class="pos">+${x.now}</small>` : ''}</td><td style="text-align:right"><b>${x.pts}</b></td></tr>`).join('')}</tbody></table>`;
   }
@@ -1768,7 +1770,7 @@ function buildSessionWall() {
       <div class="pw-seg ers"><button data-auto="1">AUTO-PROGRAMM</button></div>
       <div class="pw-label">SCHNELLE RUNDEN${fp ? ' · SPRIT' : ''}</div>
       <div class="pw-seg">${RUN_PUSH[race.kind].map(n => `<button data-push="${n}">${n}</button>`).join('')}</div>
-      ${!fp && mate(c) ? `<div class="pw-label">AUFWÄRMRUNDE</div><div class="pw-seg ers"><button data-gap="1">FREIE FAHRT</button><button data-tow="1">WINDSCHATTEN FÜR ${mate(c).id}<small>~${fmt(race.towGain, 2)} s</small></button></div>` : ''}
+      ${!fp ? `<div class="pw-label">AUFWÄRMRUNDE – ABSTAND UND WINDSCHATTEN</div><div class="pw-seg ers"><button data-gap="1">ABSTAND AUFBAUEN<small>~5 s freie Fahrt</small></button>${mate(c) ? `<button data-tow="1">WINDSCHATTEN FÜR ${mate(c).id}<small>~${fmt(race.towGain, 2)} s</small></button>` : ''}</div>` : ''}
       ${fp ? '<div class="pw-seg ers"><button data-fuel="low">WENIG SPRIT</button><button data-fuel="high">VIEL SPRIT</button><span></span></div>' : ''}
       <div class="pw-rejoin" data-f="traffic"></div>
       <button class="pw-boxbtn pw-go" data-act="go">RAUSFAHREN</button>
@@ -1882,10 +1884,14 @@ function renderSessionWall() {
     else if (race.segState === 'break') hint = 'Pause – gleich geht es weiter.';
     else if (race.segFlag) hint = 'Zielflagge – nur bereits begonnene Runden zählen noch.';
     else if (car.towGive && towHint(car)) hint = towHint(car);
+    else if (car.wantGap && !car.inGarage && car.prog.phase === 'out') {
+      const g = car.aheadGap / Math.max(40, car.v || 40);
+      hint = g >= 5 ? `🎧 Abstand steht: ~${fmt(g)} s zum Vordermann – freie Fahrt für die schnelle Runde.` : `🎧 ${car.id} baut Abstand auf: ~${fmt(Math.min(g, 9.9))} s zum Vordermann (Ziel 5 s).`;
+    }
     else if (car.inGarage && race.remaining < race.outLapEstimate()) hint = 'Zu spät – die schnelle Runde würde nicht mehr vor der Zielflagge beginnen.';
     else if (car.inGarage && !fp) {
       // Renningenieur: Dauer der Out-Lap und spätester Zeitpunkt zum Rausfahren
-      const ol = race.outLapEstimate(), latest = ol + 8, left = race.remaining - latest;
+      const ol = race.outLapEstimate() + (runCfg(car).gap ? 6 : 0), latest = ol + 8, left = race.remaining - latest;
       hint = left <= 0 ? `🎧 Jetzt sofort raus! Out-Lap ca. ${mmss(ol)} – es wird sehr knapp.`
         : `🎧 Out-Lap ca. ${mmss(ol)} · spätestens bei ${mmss(latest)} Restzeit rausfahren (noch ${mmss(left)}).`;
       if (left > 0 && left < 30 && (ui.olWarn ||= {})[car.id] !== race.segIdx && !(car.prog.runs[car.prog.runIdx])) {
@@ -2054,35 +2060,96 @@ function drawGhost() {
 // ---------- Rennstrategie vor dem Start ----------
 const stratPick = {};
 let stratOpts = {};
+const stratCustom = {};   // eigene/angepasste Strategie je Fahrer (key 'C')
 function showStrategy() {
   const cars = playerCars(race);
   stratOpts = {};
-  for (const c of cars) { stratOpts[c.id] = strategyOptions(race, c, wk); stratPick[c.id] = 'A'; }
+  for (const c of cars) { stratOpts[c.id] = strategyOptions(race, c, wk); stratPick[c.id] = 'A'; delete stratCustom[c.id]; }
   renderStrategy();
   $('startScreen').classList.add('hidden');
   $('resultScreen').classList.add('hidden');
   $('stratScreen').classList.remove('hidden');
   $('stratScreen').scrollTop = 0;
 }
+const pickedStrat = id => (stratPick[id] === 'C' ? stratCustom[id] : stratOpts[id].find(s => s.key === stratPick[id]));
+const DRY = ['S', 'M', 'H'], ALLC = ['S', 'M', 'H', 'I', 'W'];
+// Details der gewählten Strategie: Stints mit Runden, Stopps mit Runde – alles einzeln anpassbar
+function stratDetail(c) {
+  const s = pickedStrat(c.id);
+  const A = stratOpts[c.id][0];
+  const ev = planTime(race, c, wk, s), evA = planTime(race, c, wk, A);
+  const stops = [...s.stops].sort((a, b) => a.lap - b.lap);
+  const ends = [...stops.map(x => x.lap), race.laps];
+  let from = 0;
+  const rows = [s.start, ...stops.map(x => x.compound)].map((k, i) => {
+    const to = ends[i], n = to - from;
+    const row = `<div class="pw-stint"><span class="pw-tyre ${k}">${k}</span><div><b>Stint ${i + 1}: ${COMPOUNDS[k].name}</b><small>Runde ${from + 1}–${to} · ${n} Rd</small></div>
+      <button data-sa="cmp" data-car="${c.id}" data-i="${i}" title="Mischung wechseln">⟳</button></div>`
+      + (i < stops.length ? `<div class="pw-stop"><span>🔧 Stopp in Runde <b>${stops[i].lap}</b></span>
+        <button data-sa="earlier" data-car="${c.id}" data-i="${i}">−1 Rd</button><button data-sa="later" data-car="${c.id}" data-i="${i}">+1 Rd</button>
+        <button data-sa="del" data-car="${c.id}" data-i="${i}" title="Stopp streichen">✕</button></div>` : '');
+    from = to;
+    return row;
+  }).join('');
+  const d = ev.t - evA.t;
+  return `<div class="pw-sdetail"><div class="pw-label">${stratPick[c.id] === 'C' ? 'EIGENE STRATEGIE' : `STRATEGIE ${s.key} – ANPASSEN ERZEUGT EINE EIGENE`}</div>${rows}
+    <div class="pw-hqbtns"><button data-sa="add" data-car="${c.id}">+ Stopp hinzufügen</button>${stratPick[c.id] === 'C' ? `<button data-sa="reset" data-car="${c.id}">Zurück zu A</button>` : ''}</div>
+    <div class="pw-hint">Gerechnet: ${Math.abs(d) < 0.05 ? 'gleich schnell wie A' : `${d > 0 ? '+' : '−'}${fmt(Math.abs(d))} s zu A`} · Boxenverlust ~${fmt(pitLoss(race, c))} s pro Stopp</div>
+    ${ev.warn.map(x => `<div class="pw-hint bad">⚠️ ${esc(x)}</div>`).join('')}</div>`;
+}
 function renderStrategy() {
   const cars = playerCars(race);
   const who = wk.strategist || STRATEGISTS[cars[0].team.id];
   const tyres = s => [s.start, ...s.stops.map(x => x.compound)].map((k, i) => `${i ? `<span>R${s.stops[i - 1].lap}</span>` : ''}<span class="pw-tyre ${k}">${k}</span>`).join('');
   const w = weatherText({ wx: race.weather, dur: race.laps * race.track.baseLap * 1.05 });
-  $('stratBody').innerHTML = `<div class="pw-sum">Rennstratege <b>${esc(who)}</b> hat zwei Varianten je Fahrer gerechnet (${race.laps} Runden, Boxenverlust ~${fmt(pitLoss(race, cars[0]))} s).</div>`
+  $('stratBody').innerHTML = `<div class="pw-sum">Rennstratege <b>${esc(who)}</b> hat zwei Varianten je Fahrer gerechnet (${race.laps} Runden, Boxenverlust ~${fmt(pitLoss(race, cars[0]))} s). Du kannst jede Variante anpassen oder eine eigene anlegen.</div>`
     + `<button class="pw-wxrow pw-wxbtn" data-wx="1"><span class="ic">${w.icon}</span><div><b>Wetter im ${race.kind === 'sprint' ? 'Sprint' : 'Rennen'}: ${w.main}</b><small>${w.sub} · Antippen für Regenradar</small></div></button>`
     + cars.map((c, n) => `<div class="pw-strat" style="--tc:${c.team.color}"><h3><span class="pw-snum">${n + 1}</span>${esc(c.driver.first)} ${esc(c.driver.last)} <small>#${c.driver.number} · Startplatz ${c.gridPos}</small></h3>
-      ${stratOpts[c.id].map(s => `<button class="pw-opt${stratPick[c.id] === s.key ? ' on' : ''}" data-car="${c.id}" data-k="${s.key}"><b>${s.key} · ${esc(s.name)}</b><div class="tyres">${tyres(s)}</div><div>${esc(s.note)}</div></button>`).join('')}</div>`).join('');
+      ${stratOpts[c.id].map(s => `<button class="pw-opt${stratPick[c.id] === s.key ? ' on' : ''}" data-car="${c.id}" data-k="${s.key}"><b>${s.key} · ${esc(s.name)}</b><div class="tyres">${tyres(s)}</div><div>${esc(s.note)}</div></button>`).join('')}
+      <button class="pw-opt${stratPick[c.id] === 'C' ? ' on' : ''}" data-car="${c.id}" data-k="C"><b>✏️ Eigene Strategie</b>${stratCustom[c.id] ? `<div class="tyres">${tyres(stratCustom[c.id])}</div>` : '<div>Startet als Kopie der gewählten Variante – dann frei anpassen.</div>'}</button>
+      ${stratDetail(c)}</div>`).join('');
+}
+// Gewählte Strategie in eine eigene umwandeln (Kopie), damit sie bearbeitet werden kann
+function customOf(id) {
+  if (stratPick[id] !== 'C') { const s = pickedStrat(id); stratCustom[id] = { key: 'C', start: s.start, stops: s.stops.map(x => ({ ...x })), name: 'Eigene Strategie', note: '' }; stratPick[id] = 'C'; }
+  return stratCustom[id];
+}
+function editStrategy(id, act, i) {
+  const s = customOf(id), laps = race.laps;
+  s.stops.sort((a, b) => a.lap - b.lap);
+  const dry = race.weather.wetness < 0.2;
+  const next = k => { const list = dry ? DRY : ALLC; return list[(list.indexOf(k) + 1) % list.length] || list[0]; };
+  if (act === 'cmp') { if (i === 0) s.start = next(s.start); else s.stops[i - 1].compound = next(s.stops[i - 1].compound); }
+  else if (act === 'earlier' || act === 'later') {
+    const st = s.stops[i], lo = (s.stops[i - 1] ? s.stops[i - 1].lap : 0) + 1, hi = (s.stops[i + 1] ? s.stops[i + 1].lap : laps) - 1;
+    st.lap = Math.max(lo, Math.min(hi, st.lap + (act === 'later' ? 1 : -1)));
+  } else if (act === 'del') s.stops.splice(i, 1);
+  else if (act === 'add') {
+    // neuen Stopp in die Mitte des längsten Stints setzen
+    const ends = [0, ...s.stops.map(x => x.lap), laps];
+    let bi = 0;
+    for (let k = 1; k < ends.length; k++) if (ends[k] - ends[k - 1] > ends[bi + 1] - ends[bi]) bi = k - 1;
+    const lap = Math.round((ends[bi] + ends[bi + 1]) / 2);
+    if (lap > ends[bi] && lap < ends[bi + 1]) s.stops.push({ lap, compound: dry ? 'H' : 'I' });
+    s.stops.sort((a, b) => a.lap - b.lap);
+  } else if (act === 'reset') { stratPick[id] = 'A'; delete stratCustom[id]; }
+  const n = s.stops.length;
+  s.name = `Eigene: ${n} Stopp${n === 1 ? '' : 's'}`;
 }
 $('stratBody').addEventListener('click', e => {
   if (e.target.closest('[data-wx]')) { showWeather(); return; }
+  const a = e.target.closest('[data-sa]');
+  if (a) { editStrategy(a.dataset.car, a.dataset.sa, Number(a.dataset.i)); renderStrategy(); return; }
   const b = e.target.closest('[data-k]');
   if (!b) return;
-  stratPick[b.dataset.car] = b.dataset.k;
+  if (b.dataset.k === 'C') customOf(b.dataset.car); else stratPick[b.dataset.car] = b.dataset.k;
   renderStrategy();
 });
 $('stratGo').addEventListener('click', () => {
-  for (const c of playerCars(race)) applyStrategy(race, c, stratOpts[c.id].find(s => s.key === stratPick[c.id]));
+  for (const c of playerCars(race)) {
+    const s = pickedStrat(c.id);
+    applyStrategy(race, c, { ...s, stops: [...s.stops].sort((a, b) => a.lap - b.lap).map(x => ({ ...x })) });
+  }
   race.strategyDone = true;
   ui.sel = {};
   $('stratScreen').classList.add('hidden');

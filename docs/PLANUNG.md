@@ -513,3 +513,15 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Bahnen; die Zukunft (Zeitregler) und die Prognose-Tabelle sind nur eine Hochrechnung mit dem aktuellen Wind.
   Test (40 Wetterlagen): 30-min-Prognose verpasst einen Teil der Schauer. Vorbeiziehende Schauer bleiben auch bei
   Winddrehung ≥ 4,5 km von der Strecke weg.
+
+### v35 – WM-Stand nach dem Sprint, Knopf „Abstand aufbauen“, Strategie-Editor je Fahrer
+- WM-Tabelle: Sprintpunkte sind nach dem Sprint fest im Gesamtstand (kein „+8“ mehr in Qualifying/Rennen).
+  „+X“ nur noch für die laufende Wertung (Sprint bzw. Rennen); live neu sortiert, ▲/▼ gegenüber dem Stand vor dem Lauf.
+- Qualifying/Sprint-Quali: Bereich „AUFWÄRMRUNDE – ABSTAND UND WINDSCHATTEN“ mit „ABSTAND AUFBAUEN (~5 s freie Fahrt)“,
+  auch ohne Teamkollegen. Unterwegs zeigt der Renningenieur den aktuellen Abstand zum Vordermann (Ziel 5 s);
+  die Zeitansage zum Rausfahren rechnet mit der längeren Aufwärmrunde (+6 s).
+- Strategiebesprechung: je Fahrer A, B und „✏️ Eigene Strategie“. Darunter die gewählte Strategie im Detail: Stints mit
+  Mischung und Runden (von–bis, Anzahl), Stopps mit Runde. Anpassen je Stopp −1/+1 Runde, Mischung wechseln (⟳),
+  Stopp streichen, Stopp hinzufügen; jede Änderung macht daraus die eigene Strategie („Zurück zu A“).
+  Bewertung mit dem Reifenmodell (planTime): „±x s zu A“ und Warnungen (Verschleißgrenze, Kontingent,
+  Pflicht zweier Trockenmischungen).
