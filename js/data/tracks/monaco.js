@@ -11,6 +11,7 @@ export default {
   laps: 78,
   baseLap: 72.3,
   pitLaneSpeed: 60,
+  mapRotate: 180,   // von Hand: Karte um 180° gedreht darstellen
   pitLaneSide: 1,
   street: true,
   rainChance: 0.25,

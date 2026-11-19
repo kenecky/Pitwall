@@ -538,3 +538,15 @@
 .pw-mpbanner button { height: 32px; padding: 0 10px; border-radius: 8px; background: #1e293b; border: 1px solid rgba(255,255,255,.15); color: #fff; font: 700 11.5px var(--mono); }
 #startScreen.mp-ro #startBtn, #startScreen.mp-ro .mode-switch, #startScreen.mp-ro #resumeBox, #startScreen.mp-ro .pw-hqrow, #startScreen.mp-ro details.options { display: none; }
 #startScreen.mp-ro .st-card, #startScreen.mp-ro .setup-opts { pointer-events: none; }
+/* v44: Mehrspieler-Einstellungen (eigene Seite) */
+#mpSetup { z-index: 24; }
+.pw-mpset.ro { pointer-events: none; }
+.pw-mptracks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; max-height: 260px; overflow-y: auto; }
+.pw-mptracks button { text-align: left; padding: 7px 8px; border-radius: 8px; background: #1b2029; border: 2px solid #0c0e12; color: #c3cad6; }
+.pw-mptracks button b { display: block; font-size: 12px; color: #fff; }
+.pw-mptracks button small { font-size: 9.5px; color: #8a94a7; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-mptracks button.on { border-color: #facc15; background: #262d3a; }
+.pw-mpparts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pw-mpparts button { padding: 10px; border-radius: 8px; background: #1b2029; border: 2px solid #0c0e12; color: #c3cad6; font: 700 12px var(--mono); }
+.pw-mpparts button.on { border-color: #facc15; color: #fff; background: #262d3a; }
+#mpSetup .seg { display: grid; grid-auto-flow: column; gap: 5px; }

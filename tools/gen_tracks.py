@@ -11,6 +11,9 @@ verfeinert werden (Red Bull Ring ist bereits handgepflegt und wird übersprungen
 import json
 
 # Boxengassen, die von Hand korrigiert wurden (Distanzen in m ab Ziellinie)
+# Karte je Strecke zusätzlich drehen (Grad)
+MAP_ROTATE = {'monaco': 180}
+
 PIT_OVERRIDES = {
     'montreal': {'side': -1, 'entry': 4060, 'exit': 610},   # Einfahrt vor der letzten Schikane, Ausfahrt nach T2
 }
@@ -208,7 +211,7 @@ export default {{
   laps: {laps},
   baseLap: {base},
   pitLaneSpeed: {60 if tid == 'monaco' else 80},
-  pitLaneSide: {PIT_OVERRIDES.get(tid, {}).get('side', 1)},
+{('  mapRotate: ' + str(MAP_ROTATE[tid]) + ',' + chr(10)) if tid in MAP_ROTATE else ''}  pitLaneSide: {PIT_OVERRIDES.get(tid, {}).get('side', 1)},
   street: {'true' if street else 'false'},
   rainChance: {rain},
   generated: true,

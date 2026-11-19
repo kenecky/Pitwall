@@ -102,6 +102,7 @@ export class TrackMap {
     } else {
       this.angle = angleFor(this.h);
     }
+    this.angle += ((tr.def && tr.def.mapRotate) || 0) * Math.PI / 180;   // je Strecke: Karte zusätzlich drehen (z. B. Monaco 180°)
     this.cosA = Math.cos(this.angle);
     this.sinA = Math.sin(this.angle);
     const { minX, minY, maxX, maxY, s } = bounds(this.angle);

@@ -619,3 +619,16 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Code/Teams, „Lobby“ und „Beenden“. „Start“ (Gastgeber) bringt beide auf die Strecke; nach dem Wochenende geht es für
   beide zurück zu den Einstellungen.
 - Gastgeber kann auf der Startseite nicht das Team des Mitspielers wählen.
+
+### v44 – Mehrspieler: Einstellungsseite, Menü-Pause, Verbindungsabbruch; Monaco gedreht; Sprint-Hinweis
+- Sprint: Hinweis „zweite Mischung Pflicht“ entfernt (gilt nur im Rennen).
+- Monaco-Karte um 180° gedreht (Strecken-Option mapRotate, auch im Generator).
+- Mehrspieler-Einstellungen als eigene Seite (#mpSetup): Strecke, Wetter, Dauer, Sessions; Gastgeber stellt ein
+  (Lobby / Start), Gast sieht live mit (nur ansehen, „Mehrspieler beenden“). Nach dem Wochenende zurück auf diese Seite.
+- Menü (☰) im Mehrspieler: „Mehrspieler beenden und zurück zur Startseite“ (trennt die Verbindung für beide);
+  Menü öffnen pausiert das Spiel, der andere sieht „Spieler 1/2 ist im Menü“; Schließen setzt fort.
+- Vermutete Ursache für das Einfrieren am Ende von Q2: Verbindung zum Gast abgerissen → Gastgeber pausierte dauerhaft
+  (eigene Pause-Taste änderte nur den Ton). Jetzt: erzwungene Stände werden gebündelt und nie bei vollem Kanal
+  gesendet (kein Pufferüberlauf); bei Abbruch Dialog „Auf Mitspieler warten / Allein weiterspielen (KI übernimmt
+  dessen Team) / Mehrspieler beenden“; Gast kann mit „Neu verbinden“ zurückkommen (Team bleibt), dann geht es weiter.
+  Gast zeigt „Warte auf Daten vom Gastgeber“, wenn > 6 s nichts ankommt.

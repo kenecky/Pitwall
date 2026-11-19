@@ -47,7 +47,7 @@ import { SETUP_KEYS, feedback, setupScore, WET_SHIFT, driverStyleText } from './
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 43;
+export const VERSION = 44;
 // Mehrspieler-Zustand (Gastgeber rechnet, Gast zeigt an und schickt Befehle) – siehe Abschnitt „Mehrspieler“ unten
 const mp = { role: null, net: null, code: '', connected: false, myTeam: null, hostTeam: null, guestTeam: null, guestSpeed: 1, guestPaused: false,
   mySpeed: 1, myPaused: false, phase: 'lobby', meta: null, sessKey: '', lastSnap: 0, replaying: false, guestReady: null, guestReturn: null,
@@ -260,7 +260,8 @@ function newRace(seed = randomSeed()) {
   $('seedInfo').textContent = `Wochenende #${seed}`;
   $('seedInput').value = '';
   $('resultScreen').classList.add('hidden');
-  $('startScreen').classList.remove('hidden');
+  if (mp.role === 'host' && mp.phase === 'setup') { $('startScreen').classList.add('hidden'); showMpSetup(); }
+  else $('startScreen').classList.remove('hidden');
   renderStart();
   if (INTRO_TRACKS.has(track.def.id)) setTimeout(() => loadScenery(track.def.id), 300);
   refreshUi();
@@ -1035,6 +1036,48 @@ function renderStart() {
   renderMpBanner();
   if (mp.role === 'host' && mp.phase === 'setup') mpSnap(true);
 }
+// Mehrspieler: eigene Seite mit den Einstellungen des Rennwochenendes (nur der Gastgeber stellt ein, der Gast sieht live mit)
+function showMpSetup() { renderMpSetup(); $('mpSetup').classList.remove('hidden'); }
+function renderMpSetup() {
+  const host = mp.role === 'host';
+  const T = id => (id && TEAM_BY_ID[id] ? esc(TEAM_BY_ID[id].name) : '–');
+  const parts = settings.parts || [];
+  const seg = id => { const { key, items } = SEGS[id]; const cur = items.some(x => x[0] === settings[key]) ? settings[key] : items[1][0];
+    return `<div class="seg">${items.map(([v, icon, label, sub]) => `<button class="seg-b${v === cur ? ' on' : ''}" data-mps="${key}" data-v="${v}">${icon ? `<i>${icon}</i>` : ''}<b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</button>`).join('')}</div>`; };
+  const tr = TRACKS[settings.trackId];
+  const laps = track ? distanceFor(track, 'race', settings.length).laps : '';
+  $('mpSetupBody').innerHTML = `<div class="pw-mpbanner"><b>${host ? `Code ${mp.code}` : '👀 Der Gastgeber stellt ein – du siehst live mit'}</b><small>Spieler 1: ${T(mp.hostTeam)} · Spieler 2: ${T(host ? mp.guestTeam : mp.myTeam)}${host && !mp.connected ? ' · ⚠️ nicht verbunden' : ''}</small></div>
+    <div class="pw-mpset${host ? '' : ' ro'}">
+      <div class="pw-label">STRECKE</div>
+      <div class="pw-mptracks">${SEASON_2026.map(e => { const t = TRACKS[e.track]; return `<button class="${t.id === settings.trackId ? 'on' : ''}" data-mptrack="${t.id}"><b>${esc(t.country)}</b><small>${esc(t.name)}</small></button>`; }).join('')}</div>
+      <div class="pw-hint">${tr ? `${esc(tr.grandPrix)} · ${laps} Runden im Rennen` : ''}</div>
+      <div class="pw-label">WETTER</div>${seg('weatherSeg')}
+      <div class="pw-label">DAUER</div>${seg('lengthSeg')}
+      <div class="pw-label">SESSIONS</div>
+      <div class="pw-mpparts">${[['fp', 'Freies Training'], ['quali', 'Qualifying'], ['sprint', 'Sprint (mit Sprint-Quali)']].map(([k, n]) => `<button class="${parts.includes(k) ? 'on' : ''}" data-mppart="${k}">${n}</button>`).join('')}<button class="on" disabled>Rennen (immer)</button></div>
+    </div>
+    <div class="sheet-actions">${host
+      ? `<button class="secondary-btn" data-mpsa="lobby">Lobby</button><button class="primary-btn" data-mpsa="start" ${mp.connected && mp.guestTeam ? '' : 'disabled'}>Start</button>`
+      : '<button class="secondary-btn" data-mpsa="leave">Mehrspieler beenden</button>'}</div>`;
+}
+$('mpSetupBody').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  if (b.dataset.mpsa === 'leave' || (b.dataset.mpsa === 'lobby' && false)) { if (mp.net) mp.net.send({ type: 'end' }); mpLeave(); return; }
+  if (mp.role !== 'host') return;   // Gast: nur ansehen
+  if (b.dataset.mpsa === 'lobby') { mp.phase = 'lobby'; $('mpSetup').classList.add('hidden'); mpSnap(true); showMp(); return; }
+  if (b.dataset.mpsa === 'start') { $('mpSetup').classList.add('hidden'); savedGame = null; clearGame(); startRace(); return; }
+  if (b.dataset.mptrack) { settings.trackId = b.dataset.mptrack; }
+  else if (b.dataset.mps) { settings[b.dataset.mps] = b.dataset.v; }
+  else if (b.dataset.mppart) {
+    const k = b.dataset.mppart, set = new Set(settings.parts || []);
+    if (set.has(k)) { set.delete(k); if (k === 'quali') set.delete('sprint'); } else { set.add(k); if (k === 'sprint') set.add('quali'); }
+    settings.parts = [...set];
+  } else return;
+  saveSettings(settings);
+  newRace();
+  mpSnap(true);
+});
 function renderMpBanner() {
   const el = $('mpBanner');
   if (!el) return;
@@ -1049,7 +1092,7 @@ $('mpBanner').addEventListener('click', e => {
   const b = e.target.closest('[data-mpb]');
   if (!b) return;
   if (b.dataset.mpb === 'leave') { if (mp.net) mp.net.send({ type: 'end' }); mpLeave(); }
-  else if (b.dataset.mpb === 'lobby' && mp.role === 'host') { mp.phase = 'lobby'; mpSnap(true); showMp(); }
+  else if (b.dataset.mpb === 'lobby' && mp.role === 'host') { mp.phase = 'lobby'; $('mpSetup').classList.add('hidden'); mpSnap(true); showMp(); }
 });
 $('teamList').addEventListener('click', e => {
   const b = e.target.closest('[data-team]');
@@ -1198,7 +1241,7 @@ function frame(now) {
   const realDt = Math.min(0.25, (now - lastFrame) / 1000);
   lastFrame = now;
   if (mp.role === 'guest') { mpGuestFrame(now); requestAnimationFrame(frame); return; }
-  const halt = paused || (mp.role === 'host' && mp.guestPaused);   // Mehrspieler: Pause, wenn einer pausiert
+  const halt = paused || (mp.role === 'host' && (mp.guestPaused || mp.lostGuest || mp.menuOpen || mp.guestMenu));   // Mehrspieler: Pause, wenn einer pausiert, im Menü ist oder die Verbindung weg ist
   if (race && !halt && ff) {
     // Vorspulen: so viele Schritte wie in ~30 ms passen, ohne Abbremsen
     const t0 = performance.now();
@@ -1604,7 +1647,7 @@ function hintFor(car, st) {
   const life = tyreLife(race, car);
   if (life < 15 && left > 2) return { text: 'Reifen über der Klippe – er verliert viel Zeit pro Runde.', cls: 'bad' };
   const dry = ![...car.usedCompounds].some(x => x === 'I' || x === 'W') && w < 0.1;
-  if (dry && car.usedCompounds.size < 2 && !nextStop(car) && left <= 10) return { text: 'Pflicht: Im Trockenen muss noch eine zweite Mischung gefahren werden!', cls: 'bad' };
+  if (dry && race.kind !== 'sprint' && car.usedCompounds.size < 2 && !nextStop(car) && left <= 10) return { text: 'Pflicht: Im Trockenen muss noch eine zweite Mischung gefahren werden!', cls: 'bad' };
   const i = st.indexOf(car);
   const ahead = st[i - 1];
   // Overcut: Gegner direkt vor uns hat gerade gestoppt
@@ -2672,10 +2715,15 @@ $('startBtn').addEventListener('click', async () => {
   clearGame();
   startRace();
 });
-$('menuBtn').addEventListener('click', () => { $('optionsScreen').classList.remove('hidden'); });
-$('optCloseBtn').addEventListener('click', () => $('optionsScreen').classList.add('hidden'));
+$('menuBtn').addEventListener('click', () => {
+  $('optHomeBtn').textContent = mp.role ? 'Mehrspieler beenden und zurück zur Startseite' : 'Speichern · zur Startseite';
+  $('optionsScreen').classList.remove('hidden');
+  mpMenu(true);
+});
+$('optCloseBtn').addEventListener('click', () => { $('optionsScreen').classList.add('hidden'); mpMenu(false); });
 $('optHomeBtn').addEventListener('click', () => {
   $('optionsScreen').classList.add('hidden');
+  if (mp.role) { mpMenu(false); if (mp.net) mp.net.send({ type: 'end' }); mpLeave(); return; }
   autosave();
   const keep = savedGame;
   newRace();
@@ -2852,7 +2900,7 @@ function renderMp() {
   }
   b.innerHTML = `<div class="pw-mcard pw-hero"><b>${mp.connected ? '✅ Verbunden mit dem Gastgeber' : '⏳ Verbinde …'}</b><small>Code ${esc(mp.code)}${mp.hostTeam ? ` · Gastgeber fährt ${esc(TEAM_BY_ID[mp.hostTeam].name)}` : ''}</small></div>
     <div class="pw-label">DEIN TEAM</div><div class="pw-mpteams">${teamBtns(mp.hostTeam)}</div>
-    <div class="pw-hqbtns"><button data-mp="leave">Mehrspieler beenden</button></div>
+    <div class="pw-hqbtns"><button data-mp="leave">Mehrspieler beenden</button>${mp.connected ? '' : '<button class="go" data-mp="rejoin">Neu verbinden</button>'}</div>
     <div class="pw-hint">${mp.myTeam ? 'Warte, bis der Gastgeber auf „Weiter“ tippt.' : 'Wähle dein Team.'}</div>`;
 }
 $('mpBody').addEventListener('click', async e => {
@@ -2868,12 +2916,19 @@ $('mpBody').addEventListener('click', async e => {
   const a = b.dataset.mp;
   if (a === 'close') { $('mpScreen').classList.add('hidden'); return; }
   if (a === 'leave') { if (mp.net) mp.net.send({ type: 'end' }); mpLeave(); return; }
+  if (a === 'rejoin' && mp.role === 'guest') {
+    b.disabled = true; b.textContent = 'Verbinde …';
+    try { mp.net && mp.net.close(); } catch { /* egal */ }
+    try { mp.net = await mpConnect({ role: 'guest', code: mp.code, onMessage: mpOnMessage, onOpen: mpOnOpen, onClose: mpOnClose }); }
+    catch (err) { mp.error = err.message; renderMp(); return; }
+    $('mpScreen').classList.add('hidden');
+    return;
+  }
   if (a === 'next' && mp.role === 'host') {
     // weiter zu den Einstellungen – der Gast sieht sie live mit
     mp.phase = 'setup';
     $('mpScreen').classList.add('hidden');
-    $('startScreen').classList.remove('hidden');
-    renderStart();
+    showMpSetup();
     mpSnap(true);
     return;
   }
@@ -2902,25 +2957,54 @@ $('mpBody').addEventListener('click', async e => {
 function mpLeave() {
   try { mp.net && mp.net.close(); } catch { /* egal */ }
   const wasGuest = mp.role === 'guest';
-  Object.assign(mp, { role: null, net: null, connected: false, guestTeam: null, hostTeam: null, myTeam: null, meta: null, error: '' });
+  Object.assign(mp, { role: null, net: null, connected: false, guestTeam: null, hostTeam: null, myTeam: null, meta: null, error: '', menuOpen: false, guestMenu: false, lostGuest: false, guestPaused: false, guestSpeed: 1, phase: 'lobby', otherMenuShown: false, noData: false });
   mpWait('');
   $('mpScreen').classList.add('hidden');
   $('startScreen').classList.remove('mp-ro');
+  $('mpSetup').classList.add('hidden');
   if (wasGuest) { race = null; Object.assign(settings, loadSettings()); }
   newRace();
 }
 function mpOnOpen() {
   mp.connected = true;
-  if (mp.role === 'guest') mpWait('Verbunden – wähle dein Team.', 'Der Gastgeber startet danach das Wochenende.');
+  if (mp.role === 'guest' && mp.myTeam) mp.net.send({ type: 'team', team: mp.myTeam });   // Wiederverbinden: Team melden
+  if (mp.role === 'guest') mpWait(mp.myTeam ? 'Wieder verbunden – warte auf den Spielstand …' : 'Verbunden – wähle dein Team.', mp.myTeam ? '' : 'Der Gastgeber startet danach das Wochenende.');
   if (mp.role === 'host') mpSnap(true);
   renderMp();
-  if (mp.role === 'guest') showMp();
+  if (mp.role === 'guest' && !mp.myTeam) showMp();
 }
 function mpOnClose(reason) {
+  if (!mp.role) return;
   mp.connected = false;
-  if (mp.role === 'host') { mp.guestPaused = true; toast(`👥 ${reason || 'Mitspieler getrennt'} – Spiel pausiert.`, 4000); }
-  else mpWait(`Verbindung verloren${reason ? `: ${reason}` : ''}`, 'Über das Mehrspieler-Menü neu beitreten.');
+  if (mp.role === 'host') {
+    // Spiel anhalten und klar sagen, was los ist: warten (Gast kann mit dem Code neu beitreten), allein weiter oder beenden
+    mp.lostGuest = true;
+    mpLostDialog(reason);
+  } else mpWait(`Verbindung verloren${reason ? `: ${reason}` : ''}`, `Mit dem Code ${mp.code} neu beitreten (Mehrspieler-Menü) – dein Team bleibt erhalten.`);
   renderMp();
+}
+// Gastgeber: Mitspieler weg – das Spiel steht, bis er zurück ist oder der Gastgeber entscheidet
+async function mpLostDialog(reason) {
+  if (mp.lostOpen) return;
+  mp.lostOpen = true;
+  const k = await pwChoose('👥 Verbindung zum Mitspieler verloren', `${reason || ''} Das Spiel ist pausiert. Dein Mitspieler kann mit dem Code ${mp.code} neu beitreten – dann geht es weiter.`, [
+    { key: 'wait', label: 'Auf Mitspieler warten', secondary: true },
+    { key: 'solo', label: 'Allein weiterspielen' },
+    { key: 'end', label: 'Mehrspieler beenden', secondary: true },
+  ]);
+  mp.lostOpen = false;
+  if (k === 'solo') mpGoSolo();
+  else if (k === 'end') mpLeave();
+  else if (mp.connected) { mp.lostGuest = false; mp.guestPaused = false; }
+}
+// Allein weiter: das Team des Mitspielers fährt ab jetzt die KI
+function mpGoSolo() {
+  if (race) for (const c of race.cars) if (c.player && c.team.id === mp.guestTeam) c.player = false;
+  try { mp.net && mp.net.close(); } catch { /* egal */ }
+  Object.assign(mp, { role: null, net: null, connected: false, guestTeam: null, hostTeam: null, myTeam: null, meta: null, guestPaused: false, guestSpeed: 1, lostGuest: false, phase: 'lobby' });
+  mpWait('');
+  toast('Allein weiter – das Team deines Mitspielers fährt jetzt die KI.', 3500);
+  renderSpeedBtns();
 }
 
 // ----- Gastgeber -----
@@ -2928,8 +3012,11 @@ function mpSnap(force) {
   if (mp.role !== 'host' || !mp.net || !mp.connected || !race) return;
   const now = performance.now();
   const running = race.phase !== 'pre' && race.phase !== 'finished';
-  if (!force && now - mp.lastSnap < (running ? 400 : 1200)) return;
-  if (!force && mp.net.busy && mp.net.busy()) return;   // Kanal noch voll – diesen Stand auslassen
+  if (force) mp.snapPending = true;
+  if (!mp.snapPending && now - mp.lastSnap < (running ? 400 : 1200)) return;
+  // Kanal noch voll oder gerade erst gesendet: später nachholen (sonst läuft der Puffer über und die Verbindung reißt ab)
+  if ((mp.net.busy && mp.net.busy()) || now - mp.lastSnap < 150) return;
+  mp.snapPending = false;
   mp.lastSnap = now;
   mp.sessKey = mpKey();
   let data;
@@ -2937,7 +3024,8 @@ function mpSnap(force) {
   for (const k of ['debriefDone', 'resultSeen', 'returnDone', 'wkDone', 'strategyDone']) delete data[k];   // Ablauf je Gerät
   mp.net.send({ type: 'snap', trackId: track.def.id, race: data, wk: JSON.parse(JSON.stringify(wk)), meta: {
     phase: mp.phase, hostTeam: mp.hostTeam, guestTeam: mp.guestTeam, sessKey: mp.sessKey, speed: effSpeed(), guestSpeed: mp.guestSpeed,
-    paused: paused || mp.guestPaused, guestPaused: mp.guestPaused, strategyWait: mp.phase === 'strategy', length: settings.length,
+    paused: paused || mp.guestPaused || Boolean(mp.menuOpen) || Boolean(mp.guestMenu) || Boolean(mp.lostGuest), guestPaused: mp.guestPaused, strategyWait: mp.phase === 'strategy', length: settings.length,
+    hostMenu: Boolean(mp.menuOpen), guestMenu: Boolean(mp.guestMenu),
     cfg: { trackId: settings.trackId, parts: settings.parts, length: settings.length, weatherMode: settings.weatherMode, seed: wk.seed },
   } });
 }
@@ -2947,9 +3035,21 @@ function mpOnMessage(m) {
   switch (m.type) {
     case 'team':
       if (m.team === mp.hostTeam || !TEAM_BY_ID[m.team]) return;
+      if (mp.lostGuest && m.team === mp.guestTeam) {   // Mitspieler ist zurück
+        mp.lostGuest = false; mp.guestPaused = false;
+        toast('👥 Mitspieler ist wieder da – weiter geht’s.', 3000);
+        mpSnap(true);
+        return;
+      }
+      if (race && race.phase !== 'pre' && mp.guestTeam && m.team !== mp.guestTeam) return;   // im laufenden Wochenende kein Teamwechsel
       mp.guestTeam = m.team;
       if (!race || race.phase === 'pre') newRace();
       renderMp(); mpSnap(true);
+      break;
+    case 'menu':
+      mp.guestMenu = Boolean(m.open); acc = 0;
+      mpWait(mp.guestMenu ? 'Spieler 2 ist im Menü' : '', mp.guestMenu ? 'Das Spiel ist pausiert und geht weiter, sobald er das Menü schließt.' : '');
+      mpSnap(true);
       break;
     case 'end': toast('👥 Der Mitspieler hat den Mehrspieler beendet.', 3500); mpLeave(); break;
     case 'speed': mp.guestSpeed = SPEEDS.includes(m.v) ? m.v : 1; renderSpeedBtns(); mpSnap(true); break;
@@ -3043,15 +3143,11 @@ function mpGuestMessage(m) {
     $('mpScreen').classList.add('hidden');
     mpWait('');
     const sig = JSON.stringify(c) + mp.myTeam + mp.hostTeam;
-    if (mp.setupSig !== sig || $('startScreen').classList.contains('hidden')) {
-      mp.setupSig = sig;
-      $('startScreen').classList.add('mp-ro');
-      $('startScreen').classList.remove('hidden');
-      renderStart();
-    }
+    $('startScreen').classList.add('hidden');
+    if (mp.setupSig !== sig || $('mpSetup').classList.contains('hidden')) { mp.setupSig = sig; showMpSetup(); }
     return;
   }
-  $('startScreen').classList.remove('mp-ro');
+  $('mpSetup').classList.add('hidden');
   mp.setupSig = '';
   const tr = getTrack(m.trackId);
   if (track !== tr || !map.track || map.track !== tr) { track = tr; map.setTrack(tr); }
@@ -3070,6 +3166,7 @@ function mpGuestMessage(m) {
   if (!fresh) for (const k of ['debriefDone', 'resultSeen', 'returnDone', 'wkDone', 'strategyDone']) if (old[k]) r[k] = old[k];
   race = r;
   mp.snapAt = performance.now();
+  if (mp.noData) { mp.noData = false; mpWait(''); mpLastStage = ''; }
   if (fresh) {
     mp.sessKey = m.meta.sessKey;
     resetUi();
@@ -3080,6 +3177,9 @@ function mpGuestMessage(m) {
     setTab('wall');
   }
   paused = Boolean(m.meta.paused);
+  // Gastgeber im Menü
+  if (m.meta.hostMenu && !mp.otherMenuShown) { mp.otherMenuShown = true; mpWait('Spieler 1 ist im Menü', 'Das Spiel ist pausiert und geht weiter, sobald er das Menü schließt.'); }
+  else if (!m.meta.hostMenu && mp.otherMenuShown) { mp.otherMenuShown = false; mpWait(''); mpLastStage = ''; }
   // Ablauf anzeigen: warten, Strategie, Rennen
   const stage = `${m.meta.sessKey}|${m.meta.phase}|${race.phase}`;
   if (stage !== mpLastStage) {
@@ -3090,8 +3190,15 @@ function mpGuestMessage(m) {
   }
   renderSpeedBtns();
 }
+// Mehrspieler: Menü offen → Spiel pausiert, der andere sieht „Spieler X ist im Menü“
+function mpMenu(open) {
+  if (!mp.role) return;
+  if (mp.role === 'host') { mp.menuOpen = open; acc = 0; mpSnap(true); }
+  else if (mp.net) mp.net.send({ type: 'menu', open });
+}
 function mpGuestFrame(now) {
   if (!race) return;
+  if (mp.connected && mp.snapAt && now - mp.snapAt > 6000 && !mp.noData) { mp.noData = true; mpWait('Warte auf Daten vom Gastgeber …', 'Die Verbindung ist langsam oder unterbrochen.'); }
   // zwischen zwei Ständen weiterrechnen (nur Anzeige): Position + Tempo × vergangene Zeit
   const run = race.phase !== 'pre' && race.phase !== 'finished' && !(mp.meta && mp.meta.paused);
   const dt = run ? Math.min(1.2, (now - mp.snapAt) / 1000) * (mp.meta ? mp.meta.speed : 1) : 0;
