@@ -11,7 +11,7 @@ export const PACE = {
   attack: { id: 'attack', name: 'Attacke',        short: 'ATTACKE', dt: -0.55, wear: 1.75, risk: 1.4 },
 };
 export const PACE_ORDER = ['save', 'normal', 'push', 'attack'];
-export const paceOf = car => (car && car.player && PACE[car.paceMode]) || PACE.normal;
+export const paceOf = car => (car && PACE[car.player ? car.paceMode : car.aiPace]) || PACE.normal;   // KI: car.aiPace (race.aiPaceStep)
 
 // Zweikampf-Taktik: pass = Faktor eigener Angriffe (0 = keine), def = Faktor der Überholchance des Hintermanns,
 // agg = Aggressivität (Kollisionsrisiko), dt = Rundenzeit, wear = Reifenverschleiß

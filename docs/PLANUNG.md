@@ -525,3 +525,16 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Stopp streichen, Stopp hinzufügen; jede Änderung macht daraus die eigene Strategie („Zurück zu A“).
   Bewertung mit dem Reifenmodell (planTime): „±x s zu A“ und Warnungen (Verschleißgrenze, Kontingent,
   Pflicht zweier Trockenmischungen).
+
+### v36 – Fortschrittsbalken weiß, Reifen bei gefahrenen Runden, stärkere KI
+- Fortschrittsbalken im Reiter weiß.
+- Training/Qualifying: Liste der gefahrenen Runden mit Reifenmischung je Runde.
+- KI stärker (Prüfung Red Bull, 16 Rennen je Variante: als KI Verstappen Ø P5,6 / 6 Podien, als Spielerteam mit
+  Dauer-Pushen Ø P4,7 / 11 Podien – Hauptgrund: KI pushte nie, Setup schwächer):
+  - Renntempo der KI (race.aiPaceStep, alle 2 s): Pushen im Zweikampf (≤ 1,5 s vorne / ≤ 1,0 s hinten) und in den
+    letzten 6 Runden, wenn die Reifen bis zum Stopp halten; Attacke bei aggressiven Fahrern dicht dahinter;
+    Reifen schonen, wenn der Stint sonst über die Klippe geht.
+  - KI-Setup besser: 0,03–0,23 s, Top-Teams treffen es besser (Faktor nach Team-Pace), Regen-Aufschlag kleiner.
+  - Qualifying: KI-Windschatten öfter (Chance 0,45 + Wert der Strecke), KI baut in der Hälfte der letzten Runs
+    Abstand auf der Aufwärmrunde auf.
+  - Nachher: Verstappen als KI Ø P7,3 / 3 Podien, Spieler mit Dauer-Pushen Ø P6,4 / 3 Podien.

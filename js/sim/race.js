@@ -351,9 +351,35 @@ export class Race {
     let warm = C.warm && fresh < tr.L * 1.1 ? C.warm * (1 - fresh / (tr.L * 1.1)) : 0;
     // danach 2–3 Runden Spitzen-Grip (darum funktioniert der Undercut)
     if (C.warm && fresh >= tr.L * 1.1 && fresh < tr.L * 3.5) warm -= 0.6 * (1 - (fresh - tr.L * 1.1) / (tr.L * 2.4));
-    let pace = (car.player ? paceOf(car).dt + tacticOf(car).dt + moodOf(car).dt : 0) + (car.setupDt || 0);   // Pit Wall: Setup (alle Autos)
+    let pace = (car.player ? paceOf(car).dt + tacticOf(car).dt + moodOf(car).dt : paceOf(car).dt) + (car.setupDt || 0);   // Pit Wall: Setup (alle Autos)
     if (car.letBy) pace += 1.2;   // Teamorder: vom Gas gehen, damit der Teamkollege aufschließt
     return tr.baseLap + car.basePenalty + (C.wet ? 0 : C.offset) + wet + deg + 2.2 * (1 - progress) + car.lapNoise + dmg + careful + warm + pace;
+  }
+
+  // KI-Renntempo (alle 2 s): im Zweikampf und am Ende pushen, wenn die Reifen es bis zum Stopp hergeben,
+  // Reifen schonen, wenn der Stint sonst zu lang wird – wie der Teamchef bei den eigenen Autos
+  aiPaceStep() {
+    const st = this.standings();
+    const live = this.phase === 'running' || this.phase === 'chequered';
+    st.forEach((car, i) => {
+      if (car.player) return;
+      car.aiPace = 'normal';
+      if (!live || this.neutral || car.retired || car.finished || car.inPit) return;
+      const C = COMPOUNDS[car.compound];
+      if (C.wet) return;
+      const w = this.wear || 1;
+      const age = (car.tyreWear ?? car.tyreAge) * w;
+      const next = car.plan && car.plan[car.planIdx];
+      const left = Math.max(0, (next ? next.lap : this.laps) - car.lap);
+      if (age + left * w > C.cliff * 1.02) { car.aiPace = 'save'; return; }
+      const ahead = st[i - 1], behind = st[i + 1];
+      const ga = ahead && !ahead.retired ? this.gap(car, ahead) : null, gb = behind && !behind.retired ? this.gap(behind, car) : null;
+      const ta = ga && ga.time !== undefined ? ga.time : 99, tb = gb && gb.time !== undefined ? gb.time : 99;
+      const endPush = age + left * w * 1.3;
+      if ((ta < 1.5 || tb < 1.0 || this.laps - car.lap <= 6) && endPush < C.cliff * 0.97) {
+        car.aiPace = car.driver.aggression >= 75 && ta < 0.8 && age + left * w * 1.75 < C.cliff * 0.9 ? 'attack' : 'push';
+      }
+    });
   }
 
   step() {
@@ -369,6 +395,7 @@ export class Race {
     if (nr && nr.type === 'red' && nr.restart) { stepRestart(this, DT); return; }
 
     this.time += DT;
+    if (!this.isSession && this.time - (this.aiPT ?? -9) >= 2) { this.aiPT = this.time; this.aiPaceStep(); }
     const tr = this.track;
     const L = tr.L;
     this.computePhysGap();

@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore, WET_SHIFT } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 35;
+export const VERSION = 36;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -1905,7 +1905,7 @@ function renderSessionWall() {
     f('hint').textContent = hint;
     // Runden
     const laps = car.sLaps.slice(-6).reverse();
-    f('laps').innerHTML = laps.length ? laps.map(l => `<span class="${l.valid ? '' : 'del'}">${race.info.segments.length > 1 ? `${race.info.segments[l.seg].id} ` : ''}${l.label}${l.traffic ? ' <i>Verkehr</i>' : ''}${l.valid ? '' : ' <i>gestrichen</i>'}</span>`).join('') : '<span>–</span>';
+    f('laps').innerHTML = laps.length ? laps.map(l => `<span class="${l.valid ? '' : 'del'}">${race.info.segments.length > 1 ? `${race.info.segments[l.seg].id} ` : ''}${l.compound ? `<i class="pw-tyre ${l.compound}">${l.compound}</i> ` : ''}${l.label}${l.traffic ? ' <i>Verkehr</i>' : ''}${l.valid ? '' : ' <i>gestrichen</i>'}</span>`).join('') : '<span>–</span>';
     // Setup (nur Training)
     if (fp) {
       const lock = wk.setupLocked ? 'Parc fermé' : car.inGarage ? '' : '· nur in der Garage änderbar';

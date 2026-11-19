@@ -488,7 +488,7 @@
 #stratView, #protestView { z-index: 20; }
 /* v34: Fortschrittsbalken der Runde im Fahrer-Reiter */
 .pw-dtabs button .pw-tprog { position: absolute; left: 7px; right: 4px; bottom: 3px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
-.pw-dtabs button .pw-tprog i { display: block; height: 100%; width: 0; background: var(--tc); transition: width .3s linear; }
+.pw-dtabs button .pw-tprog i { display: block; height: 100%; width: 0; background: #fff; transition: width .3s linear; }
 /* v35: Strategie-Editor */
 .pw-sdetail { margin-top: 8px; padding: 8px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); }
 .pw-stint { display: grid; grid-template-columns: 26px 1fr 40px; gap: 8px; align-items: center; padding: 6px 4px; }
@@ -500,3 +500,4 @@
 .pw-stop span { flex: 1; }
 .pw-stop button { padding: 0 8px; }
 .pw-hint.bad { color: #fca5a5; }
+.pw-laps .pw-tyre { width: 16px; height: 16px; font-size: 8.5px; border-width: 2px; vertical-align: -3px; }

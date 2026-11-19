@@ -154,7 +154,7 @@ export class Session extends Race {
     const teams = new Map();
     for (const c of this.cars) if (!c.player && !c.retired && (c.elimSeg ?? null) === null && c.prog.runs.length) (teams.get(c.team.id) || teams.set(c.team.id, []).get(c.team.id)).push(c);
     for (const pair of teams.values()) {
-      if (pair.length !== 2 || !this.rng.chance(0.2 + this.towGain)) continue;
+      if (pair.length !== 2 || !this.rng.chance(0.45 + this.towGain)) continue;
       const [R, G] = pair[0].driver.pace >= pair[1].driver.pace ? pair : [pair[1], pair[0]];
       // erster Run des Schnelleren; der Geber fährt danach direkt seine eigene schnelle Runde
       // Geber fährt kurz vor dem Teamkollegen raus und bleibt vorne (notfalls eine Runde länger auf der Aufwärmrunde)
@@ -187,7 +187,8 @@ export class Session extends Race {
           });
         }
       } else {
-        const last = { depart: Math.max(15, seg.dur - out - lap * r.range(0.15, 0.7)), push: 1, compound: 'S', fuel: 0.05 };
+        // KI lässt auf der Aufwärmrunde oft Abstand zum Vordermann (freie Fahrt), wie der Teamchef
+        const last = { depart: Math.max(15, seg.dur - out - lap * r.range(0.15, 0.7)), push: 1, compound: 'S', fuel: 0.05, gap: r.chance(0.5) };
         const cycle = out + lap * 2 + 20;     // Garage → schnelle Runde → zurück
         runs = seg.dur >= 2 * cycle + 60
           ? [{ depart: r.range(20, seg.dur * 0.3), push: r.chance(0.4) ? 2 : 1, compound: 'S', fuel: 0.08 }, last]

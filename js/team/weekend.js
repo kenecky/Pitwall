@@ -123,7 +123,7 @@ export function applyWeekend(race, wk) {
       c.su = { dry: d.dt, wet: w.dt, wd: d.wear, ww: w.wear };
     } else {
       // KI (und eigene Autos ohne Training): Setup auf KI-Niveau
-      c.su = { dry: aiSetupDt(wk.seed, c.team.id, 0), wet: aiSetupDt(wk.seed, c.team.id, 1), wd: 1, ww: 1 };
+      c.su = { dry: aiSetupDt(wk.seed, c.team.id, 0, c.team.pace), wet: aiSetupDt(wk.seed, c.team.id, 1, c.team.pace), wd: 1, ww: 1 };
     }
   }
   setupLive(race);

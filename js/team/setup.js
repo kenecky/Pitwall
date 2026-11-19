@@ -134,7 +134,9 @@ export function feedback(track, s, driver, r, wet = 0) {
   return { text: cond + pick(T[top.k]), key: top.k, dir: Math.sign(top.v) };
 }
 
-// KI-Teams: Setup-Verlust je Team (fest für das Wochenende, aus Seed und Team); bei Nässe meist etwas mehr
-export function aiSetupDt(seed, teamId, wet = 0) {
-  return 0.08 + hash(`${seed}${teamId}`) * 0.3 + Math.max(0, Math.min(1, wet)) * (0.05 + hash(`${seed}${teamId}w`) * 0.4);
+// KI-Teams: Setup-Verlust je Team (fest für das Wochenende, aus Seed und Team); Top-Teams treffen es besser,
+// bei Nässe meist etwas mehr Verlust
+export function aiSetupDt(seed, teamId, wet = 0, teamPace = 85) {
+  const skill = Math.max(0.55, Math.min(1.1, 1 - (teamPace - 85) / 30));   // Pace 96 → 0,63 · 66 → 1,1
+  return (0.03 + hash(`${seed}${teamId}`) * 0.2) * skill + Math.max(0, Math.min(1, wet)) * (0.04 + hash(`${seed}${teamId}w`) * 0.3) * skill;
 }
