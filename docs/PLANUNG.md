@@ -555,3 +555,14 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   Danach Projekte „Auto für die neue Saison“ (Geld + Budget-Cap, belegen Projektplätze). KI-Teams teilen ihre Kräfte
   (aktuelle Entwicklung 60 %, dazu Entwicklung fürs neue Auto). Zur neuen Saison: Kräfteverhältnis neu
   (regShakeUp: Zufall des Reglements ±1,5 + Entwicklung, auf den Feld-Durchschnitt bezogen, max. ±6 Pace-Punkte).
+
+### v40 – Abstand jederzeit schaltbar, Boxengasse Kanada, Reglement mit Umfang, Setups und Reglement
+- Qualifying: „Abstand aufbauen“ war nur in der Garage bedienbar. Jetzt jederzeit: Garage → nächste Ausfahrt,
+  Aufwärmrunde → sofort, sonst ab der nächsten Ausfahrt.
+- Kanada: Boxengasse auf der anderen Seite, Einfahrt vor der letzten Schikane (T11, geradeaus vorbei), Ausfahrt nach T2
+  (auch im Generator tools/gen_tracks.py als PIT_OVERRIDES).
+- Reglement: Umfang zufällig – klein 50 %, mittel 32 %, groß 18 %, nie zweimal groß hintereinander. Je größer, desto
+  stärker zählen Zufall und Entwicklung (Grenze ±3/±6/±9 Pace-Punkte); wer kaum investiert (< 1), verliert extra
+  (klein −0,5, mittel −1,5, groß −3,5). Test: groß ohne eigene Entwicklung → −7,6 Punkte gegenüber dem Feld.
+- Mittlere/große Änderungen verschieben das Setup-Optimum aller Strecken (season.eraShift, ±1 bzw. ±2 je Einstellung).
+  Gespeicherte Setups aus älterem Reglement lassen sich laden, passen aber schlechter (Hinweis ⚠️ beim Speicherplatz).

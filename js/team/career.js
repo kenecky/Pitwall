@@ -114,7 +114,23 @@ export function startNewSeason(old, teams, drivers, teamId = old.teamId) {
   if (!s.career.teams.includes(teamId)) s.career.teams.push(teamId);
   // Neues Reglement: Kräfteverhältnis aus der Entwicklung der Vorsaison
   s.regAdj = regShakeUp(old, teams);
-  if (s.regAdj && old.mgmt && old.mgmt.regs) s.regNote = { type: old.mgmt.regs.type, mine: s.regAdj[teamId] || 0 };
+  const regs = old.mgmt && old.mgmt.regs;
+  if (s.regAdj && regs) s.regNote = { type: regs.type, size: regs.size || 'medium', mine: s.regAdj[teamId] || 0 };
+  // Auto verändert: das Setup-Optimum verschiebt sich (mittel ±1, groß ±2 je Einstellung) – alte Setups passen schlechter
+  s.lastRegSize = regs ? regs.size || 'medium' : null;
+  s.eraShift = { ...(old.eraShift || {}) };
+  s.regEra = old.regEra || 0;
+  if (regs && regs.size !== 'small') {
+    s.regEra++;
+    const amp = regs.size === 'big' ? 2 : 1;
+    for (const k of ['fwing', 'rwing', 'height', 'stiff', 'diff', 'brake']) s.eraShift[k] = Math.max(-3, Math.min(3, (s.eraShift[k] || 0) + Math.round((hashStr(`${s.year}${k}era`) * 2 - 1) * amp)));
+  }
   initManagement(s, teams, drivers);
   return s;
+}
+
+function hashStr(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) / 4294967296;
 }

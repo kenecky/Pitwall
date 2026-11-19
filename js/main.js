@@ -29,7 +29,7 @@ import { renderRaceTable, strategyChart } from './ui/raceTable.js';
 import { initCareer, careerAfterWeekend, careerSeasonEnd, acceptOffer, startNewSeason } from './team/career.js';
 import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
-  extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, REG_ROUND, REGS, NEXT_DEV, PU_RATE, puCar, puLoss, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
+  extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, REG_ROUND, REGS, REG_SIZE, NEXT_DEV, PU_RATE, puCar, puLoss, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
   migrateManagement, preseasonTasks, readyForRace, signTitle, signPartner, dropPartner, hire, chooseConcept, startSeason, devFactor, staffCostPerRace,
   migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, resolveSponsorEvent, migrateEvents, SPONSOR_EVENTS, agendaDialog, resolveAgenda, setBookingContext, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
 } from './team/management.js';
@@ -46,7 +46,7 @@ import { SETUP_KEYS, feedback, setupScore, WET_SHIFT, driverStyleText } from './
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 39;
+export const VERSION = 40;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -80,7 +80,10 @@ if (!TEAM_BY_ID[settings.teamId]) settings.teamId = 'ferrari';
 const builtTracks = {};
 function getTrack(id) {
   if (!TRACKS[id]) id = 'redbullring';
-  return builtTracks[id] || (builtTracks[id] = buildTrack(TRACKS[id]));
+  const t = builtTracks[id] || (builtTracks[id] = buildTrack(TRACKS[id]));
+  // Saison: Reglement-Änderungen verschieben das Setup-Optimum (alte Setups passen schlechter)
+  try { t._pwEraShift = settings.mode === 'season' && season && season.eraShift && Object.keys(season.eraShift).length ? season.eraShift : null; } catch { t._pwEraShift = null; }   // season noch nicht geladen
+  return t;
 }
 let track = getTrack(settings.trackId);
 const map = new TrackMap($('map'), track);
@@ -1861,7 +1864,7 @@ function renderSessionWall() {
     el.querySelector('[data-auto]').classList.toggle('on', Boolean(car.autoRuns));
     for (const b of el.querySelectorAll('[data-push]')) b.classList.toggle('on', Number(b.dataset.push) === cfg.push);
     for (const b of el.querySelectorAll('[data-fuel]')) b.classList.toggle('on', cfg.fuel === b.dataset.fuel);
-    for (const b of el.querySelectorAll('[data-gap]')) { b.classList.toggle('on', car.inGarage ? Boolean(cfg.gap) : Boolean(car.wantGap)); b.disabled = !car.inGarage; }
+    for (const b of el.querySelectorAll('[data-gap]')) { b.classList.toggle('on', !car.inGarage && car.prog.phase === 'out' ? Boolean(car.wantGap) : Boolean(cfg.gap)); b.disabled = car.retired; }
     for (const b of el.querySelectorAll('[data-tow]')) { b.classList.toggle('on', Boolean(car.towGive)); b.disabled = car.retired || (car.elimSeg !== null && car.elimSeg !== undefined); }
     const set = runSet(car);
     const out = car.elimSeg !== null && car.elimSeg !== undefined;
@@ -1954,7 +1957,12 @@ function sessionClick(e, b) {
   else if (b.dataset.push) cfg.push = Number(b.dataset.push);
   else if (b.dataset.fuel) cfg.fuel = b.dataset.fuel;
   else if (b.dataset.auto) race.setAutoRuns(car, !car.autoRuns);
-  else if (b.dataset.gap) cfg.gap = !cfg.gap;
+  else if (b.dataset.gap) {
+    // jederzeit: in der Garage für die nächste Ausfahrt, auf der Aufwärmrunde sofort, sonst ab der nächsten Ausfahrt
+    cfg.gap = !(car.inGarage ? cfg.gap : car.prog.phase === 'out' ? car.wantGap : cfg.gap);
+    if (!car.inGarage && car.prog.phase === 'out') car.wantGap = cfg.gap;
+    else if (!car.inGarage) toast(`Gilt ab der nächsten Ausfahrt von ${car.id}.`, 2200);
+  }
   else if (b.dataset.tow) {
     car.towGive = !car.towGive;
     if (car.towGive) race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „Auf der ${car.inGarage || car.prog.phase === 'out' ? 'Aufwärmrunde' : 'Auslaufrunde'} gibst du ${mate(car).id} Windschatten.“`, { cars: [car.id], own: true });
@@ -2268,10 +2276,10 @@ $('protestClose').addEventListener('click', () => { if (protestPlayer) { protest
 // Entwicklung: Auto für die nächste Saison (ab Saisonmitte, nach dem neuen Reglement)
 function nextCarHtml(m) {
   let h = `<div class="pw-label">NEUES AUTO ${season.year + 1}</div>`;
-  if (season.regNote) h += `<div class="pw-mcard"><b>Reglement-Wechsel zur Saison ${season.year}</b><small>Euer Auto liegt durch die Entwicklung der Vorsaison ${season.regNote.mine >= 0 ? '+' : ''}${fmt(season.regNote.mine)} über dem Durchschnitt des Feldes (Pace-Punkte).</small></div>`;
+  if (season.regNote) h += `<div class="pw-mcard"><b>Reglement-Wechsel zur Saison ${season.year} (${REG_SIZE[season.regNote.size || 'medium'].name})</b><small>Euer Auto liegt durch die Entwicklung der Vorsaison ${season.regNote.mine >= 0 ? '+' : ''}${fmt(season.regNote.mine)} über dem Durchschnitt des Feldes (Pace-Punkte).</small></div>`;
   if (!m.regs) return h + `<div class="pw-hint">Die Rennleitung legt das Reglement für ${season.year + 1} nach Rennen ${REG_ROUND} fest. Ab dann kannst du das neue Auto entwickeln – je besser, desto stärker startet ihr in die nächste Saison.</div>`;
   const r = REGS.find(x => x.id === m.regs.type);
-  return h + `<div class="pw-mcard"><b>${r.name}</b><small>${r.text}. ${NEXT_DEV.hint}.</small>
+  return h + `<div class="pw-mcard"><b>${r.name} – ${REG_SIZE[m.regs.size || 'medium'].name}</b><small>${r.text}. ${NEXT_DEV.hint}.${(m.regs.size || 'medium') === 'big' ? ' <b>Große Änderungen: Ohne Investition fällt das Team weit zurück, alte Setups passen kaum noch.</b>' : m.regs.size === 'small' ? ' Kleine Änderungen: Das Kräfteverhältnis verschiebt sich nur wenig.' : ''}</small>
     ${hqBar('ENTWICKELT', m.nextDev || 0, 8, '#38bdf8', fmt(m.nextDev || 0))}
     <div class="pw-hqbtns">${Object.entries(DEV_SIZE).map(([s, z]) => `<button data-dev="next" data-size="${s}">${z.name}<small>${money(z.cost)} · ${projectWeeks(m, s)} Wochen</small></button>`).join('')}</div>
     <small>Die anderen Teams entwickeln ihr neues Auto ebenfalls. Was du jetzt hier investierst, fehlt bei den Upgrades fürs aktuelle Auto.</small></div>`;
@@ -2279,7 +2287,8 @@ function nextCarHtml(m) {
 // Gespeicherte Setups (Bibliothek je Strecke und Fahrer, bleibt über Saisons erhalten)
 function savedSetups(id) { const lib = loadSetupLib(); return (lib[race.track.def.id] || {})[id] || {}; }
 function setupSaveHtml(id) {
-  const sv = savedSetups(id), when = x => (x && x.year ? ` (${x.year})` : '');
+  const sv = savedSetups(id), era = wk.season && season ? season.regEra || 0 : null;
+  const when = x => (x && x.year ? ` (${x.year})` : '') + (x && era !== null && x.era !== null && x.era !== undefined && x.era < era ? ' ⚠️ altes Reglement – passt evtl. nicht mehr' : '');
   return `<div class="pw-label">GESPEICHERTE SETUPS – ${esc(race.track.def.name || race.track.def.id).toUpperCase()}</div>
     <div class="pw-ssave">${['dry', 'wet'].map(k => `<div><b>${k === 'dry' ? '☀️ Trocken' : '🌧 Regen'}</b><small>${sv[k] ? setupCode(sv[k].s) + when(sv[k]) : 'noch keins'}</small>
       <span><button data-ssave="${k}" data-scar="${id}">Speichern</button><button data-sload="${k}" data-scar="${id}" ${sv[k] ? '' : 'disabled'}>Laden</button></span></div>`).join('')}</div>`;
@@ -2289,7 +2298,7 @@ function setupSaveClick(b) {
   const lib = loadSetupLib(), tid = race.track.def.id;
   if (b.dataset.ssave) {
     lib[tid] = lib[tid] || {};
-    lib[tid][id] = { ...(lib[tid][id] || {}), [k]: { s: { ...wk.setup[id] }, year: season && wk.season ? season.year : null } };
+    lib[tid][id] = { ...(lib[tid][id] || {}), [k]: { s: { ...wk.setup[id] }, year: season && wk.season ? season.year : null, era: season && wk.season ? season.regEra || 0 : null } };
     saveSetupLib(lib);
     toast(`💾 ${k === 'dry' ? 'Trocken' : 'Regen'}-Setup für ${id} gespeichert`, 2000);
   } else {

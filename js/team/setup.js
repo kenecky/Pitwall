@@ -47,6 +47,10 @@ export function startSetup(track, seed, carId) {
 // Optimum je Strecke: Heckflügel aus dem Anteil schneller Geraden, die anderen Werte je Strecke fest (aus der ID).
 // wet: Optimum bei nasser Strecke (verschoben, mit kleinen Abweichungen je Strecke)
 export function optimum(track, wet = false) {
+  // Saison: Reglement-Änderungen verschieben das Optimum (track._pwEraShift, von main gesetzt)
+  const sh = track._pwEraShift || null;
+  const sk = sh ? JSON.stringify(sh) : '';
+  if (track._pwOptKey !== sk) { track._pwOpt = null; track._pwOptW = null; track._pwOptKey = sk; }
   const key = wet ? '_pwOptW' : '_pwOpt';
   if (track[key]) return track[key];
   let fast = 0;
@@ -62,6 +66,7 @@ export function optimum(track, wet = false) {
     diff: Math.round(3 + hash(id + 'd') * 4),
     brake: Math.round(3 + hash(id + 'bb') * 4),
   };
+  if (sh) for (const k of Object.keys(dry)) dry[k] = clampK(k, dry[k] + (sh[k] || 0));
   track._pwOpt = dry;
   const w = {};
   for (const k of Object.keys(dry)) w[k] = clampK(k, dry[k] + WET_SHIFT[k] + Math.round(hash(id + k + 'w') * 2 - 1));

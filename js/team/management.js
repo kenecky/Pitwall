@@ -22,6 +22,12 @@ export const REGS = [
   { id: 'motor', name: 'Neues Motorenreglement', text: 'mehr Elektro-Anteil, neuer nachhaltiger Kraftstoff' },
   { id: 'both', name: 'Großes Gesamtpaket', text: 'neue Aerodynamik und geänderte Antriebseinheit' },
 ];
+// Umfang der Änderungen: meist klein, manchmal mittel, selten groß – nie zwei große hintereinander
+export const REG_SIZE = {
+  small:  { name: 'kleine Änderungen',  shake: 1.0, k: 0.6, miss: 0.5, ai: 0.4 },
+  medium: { name: 'mittlere Änderungen', shake: 2.2, k: 1.0, miss: 1.5, ai: 0.7 },
+  big:    { name: 'große Änderungen',   shake: 4.0, k: 1.5, miss: 3.5, ai: 1.0 },
+};
 export const NEXT_DEV = { name: 'Auto für die neue Saison', short: 'NEUES AUTO', hint: 'wirkt erst ab der nächsten Saison – kostet jetzt Geld und Budget-Cap' };
 export const DEV_SIZE = {
   small: { name: 'Kleines Update', cost: 4, weeks: 3, gain: 0.6 },
@@ -299,15 +305,18 @@ export function staffCostPerRace(m) {
 export function regShakeUp(old, teams) {
   const m = old.mgmt;
   if (!m || !m.regs) return null;
+  const z = REG_SIZE[m.regs.size || 'medium'];
   const raw = {};
   for (const t of teams) {
-    const shake = (hash(`${old.year}${t.id}shake`) - 0.5) * 3;          // wer das Reglement besser trifft
+    const shake = (hash(`${old.year}${t.id}shake`) - 0.5) * z.shake;    // wer das Reglement besser trifft
     const work = t.id === old.teamId ? (m.nextDev || 0) : ((m.ai[t.id] || {}).next || 0);
-    raw[t.id] = shake + work * 1.1;
+    // kaum investiert: großer Rückschritt (je größer die Änderungen, desto mehr)
+    raw[t.id] = shake + work * z.k - (work < 1 ? z.miss * (1 - work) : 0);
   }
   const mean = Object.values(raw).reduce((a, b) => a + b, 0) / teams.length;
+  const lim = { small: 3, medium: 6, big: 9 }[m.regs.size || 'medium'];
   const adj = {};
-  for (const t of teams) adj[t.id] = Math.round(clamp(raw[t.id] - mean, -6, 6) * 10) / 10;
+  for (const t of teams) adj[t.id] = Math.round(clamp(raw[t.id] - mean, -lim, lim) * 10) / 10;
   return adj;
 }
 
@@ -502,8 +511,11 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
   // Reglement der nächsten Saison: ab Saisonmitte von der Rennleitung festgelegt
   if (!m.regs && season.round >= REG_ROUND) {
     const r = REGS[Math.floor(hash(`${season.year}regs`) * REGS.length)];
-    m.regs = { type: r.id, year: season.year + 1, date: season.date };
-    notes.push(`📜 Die Rennleitung hat das Reglement für ${season.year + 1} festgelegt: ${r.name} (${r.text}). Ab sofort kann das Auto für die neue Saison entwickelt werden (Entwicklung → Neues Auto). Das kostet Geld und zählt zum Budget-Cap.`);
+    const x = hash(`${season.year}regsize`);
+    let size = x < 0.5 ? 'small' : x < 0.82 ? 'medium' : 'big';
+    if (size === 'big' && season.lastRegSize === 'big') size = 'medium';
+    m.regs = { type: r.id, size, year: season.year + 1, date: season.date };
+    notes.push(`📜 Die Rennleitung hat das Reglement für ${season.year + 1} festgelegt: ${r.name}, ${REG_SIZE[size].name} (${r.text}). Ab sofort kann das Auto für die neue Saison entwickelt werden (Entwicklung → Neues Auto). Das kostet Geld und zählt zum Budget-Cap.${size === 'big' ? ' Wer hier nicht investiert, fällt deutlich zurück!' : ''}`);
   }
   // KI-Teams entwickeln auch (reiche Teams etwas schneller); nach dem neuen Reglement teilen sie die Kräfte
   for (const t of teams) {
@@ -513,7 +525,7 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
     const split = m.regs ? 0.6 : 1;
     a.pace = Math.round((a.pace + hash(`${season.round}${t.id}p`) * 0.32 * rich * split) * 100) / 100;
     a.rel = Math.round((a.rel + hash(`${season.round}${t.id}r`) * 0.25) * 100) / 100;
-    if (m.regs) a.next = Math.round(((a.next || 0) + hash(`${season.round}${t.id}n`) * 0.55 * rich) * 100) / 100;
+    if (m.regs) a.next = Math.round(((a.next || 0) + hash(`${season.round}${t.id}n`) * 0.55 * rich * REG_SIZE[m.regs.size || 'medium'].ai) * 100) / 100;
   }
 
   // Fahrer: Stimmung aus Funk-Stimmung im Rennen, Ergebnis und Teamkollege

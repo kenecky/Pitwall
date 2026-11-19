@@ -9,6 +9,11 @@ abgeleitet. Die Ergebnisse sind Näherungen und können pro Strecke von Hand
 verfeinert werden (Red Bull Ring ist bereits handgepflegt und wird übersprungen).
 """
 import json
+
+# Boxengassen, die von Hand korrigiert wurden (Distanzen in m ab Ziellinie)
+PIT_OVERRIDES = {
+    'montreal': {'side': -1, 'entry': 4060, 'exit': 610},   # Einfahrt vor der letzten Schikane, Ausfahrt nach T2
+}
 import math
 import os
 import sys
@@ -177,6 +182,10 @@ def js_track(entry, feat):
     first, last = cdefs[0], cdefs[-1]
     pit_entry = {'d': (last['d'] + 60) % length} if length - last['d'] < 700 else {'d': length - 350}
     pit_exit = {'d': first['d'] + 100} if first['d'] < 800 else {'d': 400}
+    # Von Hand korrigierte Boxengassen (Seite, Einfahrt, Ausfahrt)
+    ov = PIT_OVERRIDES.get(tid)
+    if ov:
+        pit_entry, pit_exit = {'d': ov['entry']}, {'d': ov['exit']}
 
     marshal = [{'line': True}] + [{'d': round(length * k / 12)} for k in range(1, 12)]
     timing = [{'d': round(length / 3)}, {'d': round(2 * length / 3)}]
@@ -199,7 +208,7 @@ export default {{
   laps: {laps},
   baseLap: {base},
   pitLaneSpeed: {60 if tid == 'monaco' else 80},
-  pitLaneSide: 1,
+  pitLaneSide: {PIT_OVERRIDES.get(tid, {}).get('side', 1)},
   street: {'true' if street else 'false'},
   rainChance: {rain},
   generated: true,

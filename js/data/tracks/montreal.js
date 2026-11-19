@@ -11,7 +11,7 @@ export default {
   laps: 70,
   baseLap: 73.4,
   pitLaneSpeed: 80,
-  pitLaneSide: 1,
+  pitLaneSide: -1,   // von Hand: Boxengasse auf der Seite, wo sie geradeaus an der letzten Schikane vorbeiführt
   street: false,
   rainChance: 0.38,
   generated: true,
@@ -56,5 +56,5 @@ export default {
   timingSectors: [{"d": 1454}, {"d": 2907}],
   marshalSectors: [{"line": true}, {"d": 363}, {"d": 727}, {"d": 1090}, {"d": 1454}, {"d": 1817}, {"d": 2180}, {"d": 2544}, {"d": 2907}, {"d": 3271}, {"d": 3634}, {"d": 3998}],
   runoffs: [{"corner": "T1", "from": -55, "to": 105, "side": "out", "type": "asphalt", "width": 34}, {"corner": "T1", "from": -35, "to": 85, "side": "out", "type": "gravel", "width": 14, "offset": 34}, {"corner": "T2", "from": -60, "to": 155, "side": "out", "type": "asphalt", "width": 34}, {"corner": "T2", "from": -40, "to": 135, "side": "out", "type": "gravel", "width": 14, "offset": 34}, {"corner": "T3", "from": -55, "to": 95, "side": "out", "type": "asphalt", "width": 34}, {"corner": "T3", "from": -35, "to": 75, "side": "out", "type": "gravel", "width": 14, "offset": 34}, {"corner": "T4", "from": -40, "to": 105, "side": "out", "type": "asphalt", "width": 26}, {"corner": "T4", "from": -30, "to": 95, "side": "out", "type": "gravel", "width": 18, "offset": 26}, {"corner": "T5", "from": -55, "to": 156, "side": "out", "type": "asphalt", "width": 26}, {"corner": "T5", "from": -45, "to": 146, "side": "out", "type": "gravel", "width": 18, "offset": 26}, {"corner": "T6", "from": -60, "to": 100, "side": "out", "type": "asphalt", "width": 34}, {"corner": "T6", "from": -40, "to": 80, "side": "out", "type": "gravel", "width": 14, "offset": 34}, {"corner": "T7", "from": -40, "to": 150, "side": "out", "type": "asphalt", "width": 26}, {"corner": "T7", "from": -30, "to": 140, "side": "out", "type": "gravel", "width": 18, "offset": 26}, {"corner": "T8", "from": -55, "to": 90, "side": "out", "type": "asphalt", "width": 34}, {"corner": "T8", "from": -35, "to": 70, "side": "out", "type": "gravel", "width": 14, "offset": 34}, {"corner": "T9", "from": -40, "to": 131, "side": "out", "type": "asphalt", "width": 26}, {"corner": "T9", "from": -30, "to": 121, "side": "out", "type": "gravel", "width": 18, "offset": 26}, {"corner": "T10", "from": -60, "to": 115, "side": "out", "type": "asphalt", "width": 34}, {"corner": "T10", "from": -40, "to": 95, "side": "out", "type": "gravel", "width": 14, "offset": 34}, {"corner": "T11", "from": -45, "to": 85, "side": "out", "type": "asphalt", "width": 34}, {"corner": "T11", "from": -25, "to": 65, "side": "out", "type": "gravel", "width": 14, "offset": 34}, {"corner": "T12", "from": -40, "to": 90, "side": "out", "type": "asphalt", "width": 34}, {"corner": "T12", "from": -20, "to": 70, "side": "out", "type": "gravel", "width": 14, "offset": 34}],
-  pit: { entry: {"d": 4205}, exit: {"d": 552}, boxOffsetAfterLine: 120 },
+  pit: { entry: {"d": 4060}, exit: {"d": 610}, boxOffsetAfterLine: 120 },   // von Hand: Einfahrt vor T11 (Schikane), Ausfahrt nach T2
 };
