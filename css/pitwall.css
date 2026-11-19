@@ -530,3 +530,11 @@
 .pw-speedmenu .pw-slow button { height: 36px; padding: 0 8px; font-size: 12px; }
 #timing.tt-sess .tt-row { grid-template-columns: 18px 4px 32px 58px 1fr 1fr 1fr 34px 24px; }
 #timing.tt-sess .tt-row .r:last-child { font-size: 9px; }
+/* v43: Mehrspieler – Banner auf der Startseite, Gast sieht Einstellungen nur an */
+.pw-mpbanner { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; margin: 8px 0; padding: 10px 12px; border-radius: 12px; background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.4); }
+.pw-mpbanner b { color: #fff; font-size: 13px; }
+.pw-mpbanner small { grid-column: 1; color: #bae6fd; font-size: 11.5px; }
+.pw-mpbanner span { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 5px; }
+.pw-mpbanner button { height: 32px; padding: 0 10px; border-radius: 8px; background: #1e293b; border: 1px solid rgba(255,255,255,.15); color: #fff; font: 700 11.5px var(--mono); }
+#startScreen.mp-ro #startBtn, #startScreen.mp-ro .mode-switch, #startScreen.mp-ro #resumeBox, #startScreen.mp-ro .pw-hqrow, #startScreen.mp-ro details.options { display: none; }
+#startScreen.mp-ro .st-card, #startScreen.mp-ro .setup-opts { pointer-events: none; }

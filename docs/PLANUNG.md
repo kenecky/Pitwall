@@ -604,3 +604,18 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Strategiebesprechung: je Stint Satz neu / gebraucht (Runden) – immer der frischeste Satz –, Reifenzustand beim Stopp
   bzw. im Ziel in % (ändert sich mit dem Stopp-Zeitpunkt); Wahrscheinlichkeit für VSC, Safety Car und rote Flagge über
   die Renndistanz (js/data/neutralStats.js, erzeugt mit tools/gen_neutral_stats.mjs aus 12 Rennen je Strecke).
+
+### v43 – Mehrspieler: Übertragung repariert, neuer Ablauf Lobby → Einstellungen → Start
+- Fehler (echte Verbindung): Der Spielstand wurde als Objekt an PeerJS übergeben – zu groß bzw. nicht übertragbar
+  (Safari erlaubt nur ~64 KB je Nachricht). Dadurch brach z. B. der Teamwechsel des Gastgebers ab und der Gast bekam
+  nie einen Stand. Jetzt eigenes Text-Protokoll (JSON, Infinity erhalten) in Stücken zu 12 000 Zeichen
+  (PeerJS serialization 'raw'); bei vollem Kanal wird ein Stand ausgelassen. Die Testverbindung (?mptest) nutzt
+  dasselbe Protokoll.
+- Lobby: Teamwahl beider, „Mehrspieler beenden“ (beide zurück zur Startseite) und für den Gastgeber „Weiter“
+  (erst wenn der Mitspieler verbunden ist und ein Team hat). Gast: Lobby wird nur neu gezeichnet, wenn sich etwas
+  ändert (Klicks gehen nicht mehr verloren).
+- Einstellungen: Nach „Weiter“ sehen beide die Startseite (Strecke, Team, Wetter, Sessions, Dauer). Nur der Gastgeber
+  stellt ein, der Gast sieht dieselbe Seite live (nur ansehen) mit Hinweis „Der Gastgeber stellt ein“. Banner mit
+  Code/Teams, „Lobby“ und „Beenden“. „Start“ (Gastgeber) bringt beide auf die Strecke; nach dem Wochenende geht es für
+  beide zurück zu den Einstellungen.
+- Gastgeber kann auf der Startseite nicht das Team des Mitspielers wählen.

@@ -47,7 +47,7 @@ import { SETUP_KEYS, feedback, setupScore, WET_SHIFT, driverStyleText } from './
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 42;
+export const VERSION = 43;
 // Mehrspieler-Zustand (Gastgeber rechnet, Gast zeigt an und schickt Befehle) – siehe Abschnitt „Mehrspieler“ unten
 const mp = { role: null, net: null, code: '', connected: false, myTeam: null, hostTeam: null, guestTeam: null, guestSpeed: 1, guestPaused: false,
   mySpeed: 1, myPaused: false, phase: 'lobby', meta: null, sessKey: '', lastSnap: 0, replaying: false, guestReady: null, guestReturn: null,
@@ -244,6 +244,7 @@ const isSeason = () => settings.mode === 'season';
 const playerTeamId = () => (isSeason() && season ? season.teamId : settings.teamId);
 
 function newRace(seed = randomSeed()) {
+  if (mp.role === 'host' && mp.phase !== 'lobby') mp.phase = 'setup';
   let parts = settings.parts || ['fp', 'quali'];
   let trackId = settings.trackId;
   const entry = isSeason() && season ? currentEntry(season) : null;
@@ -1031,12 +1032,33 @@ function renderStart() {
     : wx.wetness > 0.2 ? `🌧 Vorhersage: Regen zum Start${wx.showers.length > 1 ? ', später weitere Schauer' : ''}`
       : '🌦 Vorhersage: wechselhaft – Regenschauer im Rennen möglich';
   drawStartHero();
+  renderMpBanner();
+  if (mp.role === 'host' && mp.phase === 'setup') mpSnap(true);
 }
+function renderMpBanner() {
+  const el = $('mpBanner');
+  if (!el) return;
+  el.classList.toggle('hidden', !mp.role);
+  if (!mp.role) return;
+  const T = id => (id && TEAM_BY_ID[id] ? esc(TEAM_BY_ID[id].name) : '–');
+  el.innerHTML = mp.role === 'host'
+    ? `<b>👥 Mehrspieler · Code ${mp.code}</b><small>Du: ${T(mp.hostTeam)} · Mitspieler: ${T(mp.guestTeam)}${mp.connected ? '' : ' · ⚠️ nicht verbunden'}</small><span><button data-mpb="lobby">Lobby</button><button data-mpb="leave">Beenden</button></span>`
+    : `<b>👥 Der Gastgeber stellt ein</b><small>Du siehst live mit · Dein Team: ${T(mp.myTeam)} · Gastgeber: ${T(mp.hostTeam)}</small><span><button data-mpb="leave">Mehrspieler beenden</button></span>`;
+}
+$('mpBanner').addEventListener('click', e => {
+  const b = e.target.closest('[data-mpb]');
+  if (!b) return;
+  if (b.dataset.mpb === 'leave') { if (mp.net) mp.net.send({ type: 'end' }); mpLeave(); }
+  else if (b.dataset.mpb === 'lobby' && mp.role === 'host') { mp.phase = 'lobby'; mpSnap(true); showMp(); }
+});
 $('teamList').addEventListener('click', e => {
   const b = e.target.closest('[data-team]');
   if (!b || b.dataset.team === settings.teamId || (isSeason() && season)) return;
+  if (mp.role === 'guest') return;
+  if (mp.role === 'host' && b.dataset.team === mp.guestTeam) { toast('Dieses Team fährt dein Mitspieler.', 2200); return; }
   settings.teamId = b.dataset.team;
   saveSettings(settings);
+  if (mp.role === 'host') mp.myTeam = mp.hostTeam = settings.teamId;
   newRace(race.seed);
 });
 $('gpList').addEventListener('click', e => {
@@ -1527,6 +1549,7 @@ function renderWall() {
     }
     // Reifensatz für den nächsten Stopp (aus dem Kontingent des Fahrers)
     if (car.nextSet && car.nextSet.c !== sel) car.nextSet = null;
+    if (!wk.sets[car.id]) continue;   // (Mehrspieler: Stand noch nicht vollständig)
     const nset = car.nextSet || setsOf(wk, car.id, sel).find(x => x !== car.curSet) || null;
     const nsig = `${sel}|${nset ? nset.id : 0}|${wk.sets[car.id].map(x => Math.round(x.laps)).join(',')}|${gone}`;
     if (f('rsets').dataset.sig !== nsig) { f('rsets').dataset.sig = nsig; f('rsets').innerHTML = gone ? '' : setChips(car, nset ? nset.id : 0, 'data-rset', sel); }
@@ -2819,22 +2842,23 @@ function renderMp() {
   }
   const teamBtns = exclude => TEAMS.map(t => `<button class="pw-team${t.id === mp.myTeam ? ' on' : ''}" data-mpteam="${t.id}" ${t.id === exclude ? 'disabled' : ''}><i style="background:${t.color}"></i>${esc(t.name)}${t.id === exclude ? ' <small>(Mitspieler)</small>' : ''}</button>`).join('');
   if (mp.role === 'host') {
+    const ready = mp.connected && mp.guestTeam;
     b.innerHTML = `<div class="pw-mcard pw-hero"><small>CODE FÜR DEINEN MITSPIELER</small><b class="pw-mpbig">${mp.code}</b>
       <small>${mp.connected ? `✅ Verbunden${mp.guestTeam ? ` · Mitspieler fährt <b>${esc(TEAM_BY_ID[mp.guestTeam].name)}</b>` : ' · Mitspieler wählt sein Team …'}` : '⏳ Warte auf den Mitspieler …'}</small></div>
       <div class="pw-label">DEIN TEAM</div><div class="pw-mpteams">${teamBtns(mp.guestTeam)}</div>
-      <div class="pw-hint">Strecke, Sessions, Dauer und Wetter stellst du auf der Startseite ein. Dann „Start“.</div>
-      <div class="pw-hqbtns"><button class="go" data-mp="close">Zur Startseite</button><button data-mp="leave">Mehrspieler beenden</button></div>`;
+      <div class="pw-hqbtns"><button data-mp="leave">Mehrspieler beenden</button><button class="go" data-mp="next" ${ready ? '' : 'disabled'}>Weiter</button></div>
+      <div class="pw-hint">Mit „Weiter“ geht es für beide zu den Einstellungen (Strecke, Wetter, Dauer, Sessions).</div>`;
     return;
   }
   b.innerHTML = `<div class="pw-mcard pw-hero"><b>${mp.connected ? '✅ Verbunden mit dem Gastgeber' : '⏳ Verbinde …'}</b><small>Code ${esc(mp.code)}${mp.hostTeam ? ` · Gastgeber fährt ${esc(TEAM_BY_ID[mp.hostTeam].name)}` : ''}</small></div>
     <div class="pw-label">DEIN TEAM</div><div class="pw-mpteams">${teamBtns(mp.hostTeam)}</div>
-    <div class="pw-hint">Der Gastgeber wählt Strecke und Sessions und startet das Wochenende.</div>
-    <div class="pw-hqbtns"><button data-mp="leave">Mehrspieler beenden</button></div>`;
+    <div class="pw-hqbtns"><button data-mp="leave">Mehrspieler beenden</button></div>
+    <div class="pw-hint">${mp.myTeam ? 'Warte, bis der Gastgeber auf „Weiter“ tippt.' : 'Wähle dein Team.'}</div>`;
 }
 $('mpBody').addEventListener('click', async e => {
   const t = e.target.closest('[data-mpteam]');
   if (t && !t.disabled) {
-    if (mp.role === 'host') { if (race && race.phase !== 'pre') return; settings.teamId = t.dataset.mpteam; saveSettings(settings); mp.myTeam = mp.hostTeam = settings.teamId; newRace(); mpSnap(true); }
+    if (mp.role === 'host') { settings.teamId = t.dataset.mpteam; saveSettings(settings); mp.myTeam = mp.hostTeam = settings.teamId; renderMp(); try { newRace(); } catch (err) { console.error(err); } mpSnap(true); return; }
     else if (mp.role === 'guest') { mp.myTeam = t.dataset.mpteam; mp.net.send({ type: 'team', team: mp.myTeam }); }
     renderMp();
     return;
@@ -2843,7 +2867,16 @@ $('mpBody').addEventListener('click', async e => {
   if (!b) return;
   const a = b.dataset.mp;
   if (a === 'close') { $('mpScreen').classList.add('hidden'); return; }
-  if (a === 'leave') { mpLeave(); return; }
+  if (a === 'leave') { if (mp.net) mp.net.send({ type: 'end' }); mpLeave(); return; }
+  if (a === 'next' && mp.role === 'host') {
+    // weiter zu den Einstellungen – der Gast sieht sie live mit
+    mp.phase = 'setup';
+    $('mpScreen').classList.add('hidden');
+    $('startScreen').classList.remove('hidden');
+    renderStart();
+    mpSnap(true);
+    return;
+  }
   if (a === 'host' || a === 'join') {
     mp.error = '';
     const role = a === 'host' ? 'host' : 'guest';
@@ -2872,7 +2905,8 @@ function mpLeave() {
   Object.assign(mp, { role: null, net: null, connected: false, guestTeam: null, hostTeam: null, myTeam: null, meta: null, error: '' });
   mpWait('');
   $('mpScreen').classList.add('hidden');
-  if (wasGuest) { race = null; }
+  $('startScreen').classList.remove('mp-ro');
+  if (wasGuest) { race = null; Object.assign(settings, loadSettings()); }
   newRace();
 }
 function mpOnOpen() {
@@ -2895,6 +2929,7 @@ function mpSnap(force) {
   const now = performance.now();
   const running = race.phase !== 'pre' && race.phase !== 'finished';
   if (!force && now - mp.lastSnap < (running ? 400 : 1200)) return;
+  if (!force && mp.net.busy && mp.net.busy()) return;   // Kanal noch voll – diesen Stand auslassen
   mp.lastSnap = now;
   mp.sessKey = mpKey();
   let data;
@@ -2903,6 +2938,7 @@ function mpSnap(force) {
   mp.net.send({ type: 'snap', trackId: track.def.id, race: data, wk: JSON.parse(JSON.stringify(wk)), meta: {
     phase: mp.phase, hostTeam: mp.hostTeam, guestTeam: mp.guestTeam, sessKey: mp.sessKey, speed: effSpeed(), guestSpeed: mp.guestSpeed,
     paused: paused || mp.guestPaused, guestPaused: mp.guestPaused, strategyWait: mp.phase === 'strategy', length: settings.length,
+    cfg: { trackId: settings.trackId, parts: settings.parts, length: settings.length, weatherMode: settings.weatherMode, seed: wk.seed },
   } });
 }
 function mpOnMessage(m) {
@@ -2915,6 +2951,7 @@ function mpOnMessage(m) {
       if (!race || race.phase === 'pre') newRace();
       renderMp(); mpSnap(true);
       break;
+    case 'end': toast('👥 Der Mitspieler hat den Mehrspieler beendet.', 3500); mpLeave(); break;
     case 'speed': mp.guestSpeed = SPEEDS.includes(m.v) ? m.v : 1; renderSpeedBtns(); mpSnap(true); break;
     case 'pause': mp.guestPaused = Boolean(m.v); acc = 0; renderSpeedBtns(); mpSnap(true); break;
     case 'wall': mpAsGuest(() => {
@@ -2980,13 +3017,42 @@ function mpGuestReady() {
 var mpLastStage = '';   // var: schon vor diesem Abschnitt nutzbar
 function mpGuestMessage(m) {
   if (m.type === 'full') { mp.error = 'Das Spiel ist schon voll.'; mpLeave(); return; }
+  if (m.type === 'end') { toast('👥 Der Gastgeber hat den Mehrspieler beendet.', 3500); mpLeave(); return; }
   if (m.type !== 'snap') return;
   mp.meta = m.meta;
   mp.hostTeam = m.meta.hostTeam;
   if (m.meta.guestTeam) mp.myTeam = m.meta.guestTeam;
   mp.mySpeed = m.meta.guestSpeed || mp.mySpeed;
   mp.myPaused = Boolean(m.meta.guestPaused);
-  if (!mp.myTeam) { renderMp(); return; }
+  // Lobby: Teamwahl (nur neu zeichnen, wenn sich etwas geändert hat – sonst gehen Klicks verloren)
+  if (m.meta.phase === 'lobby' || !mp.myTeam) {
+    const sig = `${mp.connected}|${mp.hostTeam}|${mp.myTeam}`;
+    if (mp.lobbySig !== sig || $('mpScreen').classList.contains('hidden')) { mp.lobbySig = sig; renderMp(); $('mpScreen').classList.remove('hidden'); }
+    $('startScreen').classList.add('hidden');
+    mpWait('');
+    return;
+  }
+  // Einstellungen: Startseite nur ansehen (der Gastgeber stellt ein)
+  if (m.meta.phase === 'setup') {
+    const c = m.meta.cfg || {};
+    Object.assign(settings, { trackId: c.trackId, parts: c.parts, length: c.length, weatherMode: c.weatherMode, teamId: mp.myTeam, mode: 'single' });   // nur Anzeige, nicht gespeichert
+    track = getTrack(c.trackId);
+    const r = restoreRace({ track, teams: TEAMS, drivers: DRIVERS, data: m.race });
+    if (r) { r.playerTeam = mp.myTeam; race = r; wk = m.wk; ui.built = null; }
+    mp.sessKey = '';
+    $('mpScreen').classList.add('hidden');
+    mpWait('');
+    const sig = JSON.stringify(c) + mp.myTeam + mp.hostTeam;
+    if (mp.setupSig !== sig || $('startScreen').classList.contains('hidden')) {
+      mp.setupSig = sig;
+      $('startScreen').classList.add('mp-ro');
+      $('startScreen').classList.remove('hidden');
+      renderStart();
+    }
+    return;
+  }
+  $('startScreen').classList.remove('mp-ro');
+  mp.setupSig = '';
   const tr = getTrack(m.trackId);
   if (track !== tr || !map.track || map.track !== tr) { track = tr; map.setTrack(tr); }
   const old = race;
@@ -3080,3 +3146,5 @@ function mpGuestNext() {
   $('resultScreen').classList.add('hidden');
   mpWait('Fertig – warte auf den Gastgeber …');
 }
+// Testhilfe (nur mit ?mptest): Zustand für automatische Tests lesbar machen
+if (/[?&]mptest\b/.test(location.search)) window.pwDebug = () => ({ role: mp.role, sets: wk && Object.keys(wk.sets), humans: race && race.cars.filter(c => c.player).map(c => c.id), playerTeam: race && race.playerTeam, phase: race && race.phase, kind: race && race.kind });
