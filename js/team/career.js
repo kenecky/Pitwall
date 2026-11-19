@@ -1,6 +1,7 @@
 // Pit Wall – Karriere als Teamchef: Ruf über alle Saisons, Angebote anderer Teams, Entlassung, Teamwechsel,
 // neue Saison. Zustand in season.career (wird in jede neue Saison übernommen).
 import { initManagement, regShakeUp } from './management.js';
+import { nextDriverSeason, applyRoster } from './drivers.js';
 import { newSeason } from './season.js';
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -118,6 +119,11 @@ export function startNewSeason(old, teams, drivers, teamId = old.teamId) {
   if (s.regAdj && regs) s.regNote = { type: regs.type, size: regs.size || 'medium', mine: s.regAdj[teamId] || 0 };
   // Auto verändert: das Setup-Optimum verschiebt sich (mittel ±1, groß ±2 je Einstellung) – alte Setups passen schlechter
   s.lastRegSize = regs ? regs.size || 'medium' : null;
+  // Fahrermarkt: Verträge, Entwicklung, Rücktritte, Transfers, Nachwuchs
+  const dm = nextDriverSeason(old, s.year, teams, (old.mgmt && old.mgmt.academy) || 0);
+  s.drv = dm.drv;
+  s.drvNotes = dm.notes;
+  applyRoster(s);
   s.eraShift = { ...(old.eraShift || {}) };
   s.regEra = old.regEra || 0;
   if (regs && regs.size !== 'small') {
@@ -126,6 +132,14 @@ export function startNewSeason(old, teams, drivers, teamId = old.teamId) {
     for (const k of ['fwing', 'rwing', 'height', 'stiff', 'diff', 'brake']) s.eraShift[k] = Math.max(-3, Math.min(3, (s.eraShift[k] || 0) + Math.round((hashStr(`${s.year}${k}era`) * 2 - 1) * amp)));
   }
   initManagement(s, teams, drivers);
+  // Geld wird ins neue Jahr übertragen, die Akademie bleibt
+  if (old.mgmt && teamId === old.teamId) {
+    const carry = Math.round(old.mgmt.money * 10) / 10;
+    s.mgmt.money = Math.round((s.mgmt.money + carry) * 10) / 10;
+    s.mgmt.ledger = s.mgmt.ledger || [];
+    s.mgmt.carry = carry;
+    s.mgmt.academy = old.mgmt.academy || 0;
+  }
   return s;
 }
 

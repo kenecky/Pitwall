@@ -632,3 +632,21 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   gesendet (kein Pufferüberlauf); bei Abbruch Dialog „Auf Mitspieler warten / Allein weiterspielen (KI übernimmt
   dessen Team) / Mehrspieler beenden“; Gast kann mit „Neu verbinden“ zurückkommen (Team bleibt), dann geht es weiter.
   Gast zeigt „Warte auf Daten vom Gastgeber“, wenn > 6 s nichts ankommt.
+
+### v45/v46 – Drei Spielstände, Mehrspieler speichern, Geld außerhalb des Caps, Fahrermarkt
+- Spielstände getrennt (IndexedDB-Schlüssel bzw. localStorage „pw-save-v1-<slot>“): Einzelrennen ('single'),
+  Saison ('season'), Mehrspieler ('mp'). Der alte gemeinsame Stand ('current') wird beim Start in den passenden Platz
+  übernommen und erst gelöscht, wenn der neue nachweislich geschrieben ist.
+- Mehrspieler: Gastgeber speichert alle 10 s und nach jeder Session; beim Beenden wird gesichert. In der Lobby:
+  „Gespeichertes Mehrspieler-Wochenende fortsetzen“ – der Mitspieler bekommt automatisch sein Team von damals.
+- Geld außerhalb des Budget-Caps (Geld-Seite): Marketing (Social Media 1,5 Mio. / große Kampagne 5 Mio.: Ruf,
+  zufriedenere Sponsoren, bessere Angebote; 1× pro Rennwoche), Ausschüttung an die Eigentümer (5/10 Mio.: Vertrauen
+  des Vorstands), Fahrerprämien (0,5 Mio., Stimmung +12), Nachwuchs-Akademie (Stufe 1–3: 4/8/12 Mio.). Die drei
+  bestbezahlten Schlüsselposten zählen nicht mehr zum Cap. Restgeld wird ins nächste Jahr übertragen.
+- Fahrermarkt (js/team/drivers.js, season.drv): Kader je Saison (Fahrerliste wird angepasst, Einzelrennen/
+  Mehrspieler: Standard), Verträge mit Laufzeit (auch KI), Alter, Entwicklung (jung besser bis zum Potenzial, ab ~33
+  langsamer), Rücktritte, ehemalige Fahrer ohne Cockpit, jedes Jahr Nachwuchs (fiktive Namen), Akademie-Junioren nur
+  für den Teamchef. Fahrer-Seite: Alter, Vertragsende (Warnung), „Fahrermarkt für <Jahr+1>“ mit freien Plätzen,
+  Verpflichten für 1–3 Jahre (starke Fahrer lehnen schwache Teams ab), Zurückziehen.
+  Saisonende: Verpflichtungen, auslaufende Verträge (eigenes Team: Fahrer geht; KI: Spitzenfahrer bleiben meist, sonst
+  frei), freie Plätze füllen (starke Teams zuerst, meist der beste freie Fahrer), Meldungen in der Teamzentrale.

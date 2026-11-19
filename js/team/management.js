@@ -101,7 +101,10 @@ export function initManagement(season, teams, drivers) {
     staff: { crew: tier === 'top' ? 4 : 3, eng: tier === 'back' ? 2 : 3 },
     parts: { wing: 6, chassis: 2 },
     pu: { used: 1, age: 0 },
-    drivers: Object.fromEntries(own.map(d => [d.id, { morale: 70, contractEnd: 2026 + (d.pace >= 90 ? 2 : 1), salary: Math.round(2 + Math.max(0, d.pace - 70) * 0.9) }])),
+    drivers: Object.fromEntries(own.map(d => {
+      const c = season.drv && season.drv.contracts[d.id];   // Fahrermarkt: Vertrag aus dem Kader
+      return [d.id, { morale: 70, contractEnd: c ? c.until : season.year + (d.pace >= 90 ? 2 : 1), salary: c ? c.salary : Math.round(2 + Math.max(0, d.pace - 70) * 0.9) }];
+    })),
     sponsors: [],
     titleSponsor: null,
     phase: 'preseason', concept: null,
@@ -297,6 +300,9 @@ export function devFactor(m, type) {
   const bld = 1 + (bLvl(m, type === 'aero' ? 'wind' : 'dyno') - 1) * 0.06;
   return (0.5 + (postRating(m, 'td') + postRating(m, spec)) / 2 / 140) * bld;
 }
+export function topStaffPerRace(m) {
+  return Object.values(m.posts || {}).filter(Boolean).map(p => p.salary).sort((a, b) => b - a).slice(0, 3).reduce((a, b) => a + b, 0) / 24;
+}
 export function staffCostPerRace(m) {
   return Object.values(m.posts || {}).reduce((s, p) => s + (p ? p.salary : 0), 0) / 24;
 }
@@ -429,6 +435,56 @@ export function newPowerUnit(season, id) {
   return null;
 }
 
+// ---------- Geld außerhalb des Budget-Caps ----------
+export const MARKETING = {
+  small: { name: 'Social-Media-Kampagne', cost: 1.5, rep: 2, happy: 5, hype: 1.03 },
+  big:   { name: 'Große Werbekampagne',   cost: 5,   rep: 5, happy: 12, hype: 1.08 },
+};
+// Marketing: Ruf, zufriedenere Sponsoren, bessere Angebote (einmal pro Wochenende)
+export function runMarketing(season, size) {
+  const m = season.mgmt, x = MARKETING[size];
+  if (!x) return 'Unbekannt.';
+  if (m.mktRound === season.round) return 'In dieser Woche läuft schon eine Kampagne.';
+  if (m.money < x.cost) return 'Nicht genug Geld.';
+  spend(m, x.cost, `Marketing: ${x.name}`, false);
+  m.mktRound = season.round;
+  m.board.rep = clamp(m.board.rep + x.rep, 0, 100);
+  for (const sp of m.sponsors) sp.happy = clamp((sp.happy ?? 70) + x.happy, 0, 100);
+  m.hype = Math.max(m.hype || 1, x.hype);
+  return null;
+}
+// Gewinn an die Eigentümer: stärkt das Vertrauen des Vorstands
+export function payOwners(season, amount) {
+  const m = season.mgmt;
+  if (m.money < amount + 5) return 'Dafür reicht das Geld nicht (5 Mio. $ müssen als Reserve bleiben).';
+  spend(m, amount, 'Ausschüttung an die Eigentümer', false);
+  const gain = Math.round(amount * 0.8);
+  m.board.rep = clamp(m.board.rep + gain, 0, 100);
+  return null;
+}
+// Prämie für einen Fahrer: Stimmung deutlich besser (einmal pro Wochenende je Fahrer)
+export function driverBonus(season, id) {
+  const m = season.mgmt, d = m.drivers[id];
+  if (!d) return 'Unbekannter Fahrer.';
+  if (d.bonusRound === season.round) return 'Diesen Fahrer hast du an diesem Wochenende schon belohnt.';
+  if (m.money < 0.5) return 'Nicht genug Geld.';
+  spend(m, 0.5, `Prämie für ${id}`, false);
+  d.bonusRound = season.round;
+  d.morale = clamp(d.morale + 12, 0, 100);
+  return null;
+}
+// Nachwuchs-Akademie (Stufe 0–3): je Stufe ein eigener, besserer Junior pro Jahr im Fahrermarkt
+export const ACADEMY_COST = [4, 8, 12];
+export function buildAcademy(season) {
+  const m = season.mgmt, lvl = m.academy || 0;
+  if (lvl >= 3) return 'Die Akademie ist schon voll ausgebaut.';
+  const cost = ACADEMY_COST[lvl];
+  if (m.money < cost) return 'Nicht genug Geld.';
+  spend(m, cost, `Nachwuchs-Akademie Stufe ${lvl + 1}`, false);
+  m.academy = lvl + 1;
+  return null;
+}
+
 export function extendContract(season, id) {
   const m = season.mgmt, d = m.drivers[id];
   if (!d) return 'Unbekannter Fahrer.';
@@ -488,8 +544,10 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
   if (m.titleSponsor && runOut(m.titleSponsor)) { notes.push(`Der Vertrag mit Titelsponsor ${m.titleSponsor.name} ist ausgelaufen – neuen Titelsponsor suchen!`); m.titleSponsor = null; }
   for (const sp of [...m.sponsors]) if (runOut(sp)) { notes.push(`Der Partnervertrag mit ${sp.name} ist ausgelaufen.`); m.sponsors.splice(m.sponsors.indexOf(sp), 1); }
   // Ausgaben: Personal (Budgetobergrenze), Fahrergehälter (nicht), Reparaturen und Ersatzteile
-  const staff = staffCostPerRace(m) + OPS;   // Schlüsselposten + Grundbetrieb (Fabrik, Personal, Reisen, Logistik)
-  spend(m, staff, 'Personal und Betrieb');
+  // Die drei bestbezahlten Schlüsselposten zählen (wie in echt) nicht zur Budgetobergrenze
+  const top3 = topStaffPerRace(m);
+  spend(m, staffCostPerRace(m) - top3 + OPS, 'Personal und Betrieb');
+  if (top3 > 0) spend(m, top3, 'Spitzenpersonal (außerhalb Budget-Cap)', false);
   const sal = own.reduce((s, id) => s + m.drivers[id].salary, 0) / 24;
   spend(m, sal, 'Fahrergehälter', false);
   for (const [k, n] of Object.entries(used)) {

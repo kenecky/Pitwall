@@ -550,3 +550,4 @@
 .pw-mpparts button { padding: 10px; border-radius: 8px; background: #1b2029; border: 2px solid #0c0e12; color: #c3cad6; font: 700 12px var(--mono); }
 .pw-mpparts button.on { border-color: #facc15; color: #fff; background: #262d3a; }
 #mpSetup .seg { display: grid; grid-auto-flow: column; gap: 5px; }
+.pw-years { display: flex; gap: 4px; } .pw-years button { padding: 0 8px; }

@@ -44,6 +44,7 @@ export function recordWeekend(season, wk, drivers) {
 
 export function driverStandings(season, drivers) {
   return drivers.map(d => ({ d, pts: season.driverPts[d.id] || 0, wins: season.results.filter(r => r.race[0] && r.race[0].id === d.id).length }))
+    .filter(x => x.d.team || x.pts > 0)   // Fahrer ohne Cockpit nur, wenn sie Punkte haben
     .sort((a, b) => b.pts - a.pts || b.wins - a.wins);
 }
 export function teamStandings(season, teams) {

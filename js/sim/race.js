@@ -99,7 +99,7 @@ export class Race {
     const teamById = Object.fromEntries(teams.map(t => [t.id, t]));
     // Kürzere Rennen: Abstand der Autos etwas spreizen, damit Hinterbänkler auch dort überrundet werden
     const spread = kind === 'race' ? Math.pow(this.wear, 0.5) : 1;
-    this.cars = drivers.map(drv => {
+    this.cars = drivers.filter(drv => teamById[drv.team]).map(drv => {   // Fahrer ohne Cockpit (Fahrermarkt) fahren nicht
       const team = teamById[drv.team];
       return {
         id: drv.id,
