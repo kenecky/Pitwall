@@ -566,3 +566,24 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   (klein −0,5, mittel −1,5, groß −3,5). Test: groß ohne eigene Entwicklung → −7,6 Punkte gegenüber dem Feld.
 - Mittlere/große Änderungen verschieben das Setup-Optimum aller Strecken (season.eraShift, ±1 bzw. ±2 je Einstellung).
   Gespeicherte Setups aus älterem Reglement lassen sich laden, passen aber schlechter (Hinweis ⚠️ beim Speicherplatz).
+
+### v41 – Mehrspieler (Rennwochenende zu zweit, WLAN)
+- Start: Knopf „👥 Mehrspieler“. Gastgeber erstellt ein Spiel (5-stelliger Code), Gast tritt mit dem Code bei und wählt
+  sein Team (nicht das des Gastgebers). Strecke, Sessions, Dauer, Wetter stellt der Gastgeber auf der Startseite ein.
+- Verbindung (js/mp/net.js): WebRTC über PeerJS (Bibliothek von jsdelivr, kostenloser öffentlicher Vermittlungsdienst
+  0.peerjs.com, keine Anmeldung), Daten direkt zwischen den Geräten. Test ohne Netz: URL ?mptest → BroadcastChannel.
+- Gastgeber rechnet alles (beide Teams sind menschlich: Race-Option humanTeams, car.player; race.playerTeam = Team am
+  Gerät; playerCars = eigene, humanCars = beide; Teamorder je Team; Funk für beide Teams). Er schickt ~2,5×/s
+  (Box/Ergebnis 1×/s) den Stand: serializeRace + Wochenende + Meta (Phase, Tempo, Pause).
+- Gast: kein eigenes Rechnen, baut aus jedem Stand das Rennen (restoreRace) und zeigt es an (Positionen zwischen zwei
+  Ständen hochgerechnet). Bedienung im Pit-Wall-Reiter wird als Befehl geschickt und beim Gastgeber für das Team des
+  Gasts ausgeführt (gleiche Funktionen, ohne dessen Anzeige zu stören). Setup-Änderungen im Debriefing/Laden werden
+  geschickt, Setups speichern bleibt lokal (Bibliothek je Gerät).
+- Tempo: es gilt das kleinere der beiden gewählten Tempi; Anzeige „eigenes (gemeinsames)“. Pause, sobald einer
+  pausiert – weiter erst, wenn beide weiterfahren. Rückkehr in die Garage setzt das Tempo des jeweiligen Spielers auf 1×.
+- Ablauf: Strategiebesprechung bei beiden, Start erst, wenn beide bestätigt haben. Nach jeder Session machen beide ihre
+  Schritte (Debriefing, Ergebnis, Reifenabgabe) – der Gastgeber geht erst weiter, wenn der Gast fertig ist.
+- Im Mehrspieler aus: Saison, Spielstand, Vorspulen, Proteste, „Wochenende beenden“.
+- Test (zwei Tabs, ?mptest): Lobby, Teamwahl, Strategie beider, Rennstart, Befehl des Gasts (Pushen), gemeinsames Tempo,
+  Training mit Rausfahren des Gasts, Debriefing/Ergebnis/Reifenabgabe, Warten des Gastgebers, weiter zur Strategie.
+  Nicht getestet: echte Verbindung über PeerJS (in der Testumgebung nicht erreichbar).

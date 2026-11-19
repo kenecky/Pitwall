@@ -118,7 +118,7 @@ export function radioStep(race) {
   if (race.time < R.next) return;
   R.next = race.time + 1;
   const st = race.standings();
-  for (const car of playerCars(race)) {
+  for (const car of race.cars.filter(c => c.player)) {   // alle menschlichen Teams (Mehrspieler)
     if (car.retired || car.finished || car.inPit) continue;
     eventTriggers(race, car);
     if (openMessage(race, car)) continue;
@@ -156,7 +156,7 @@ function stateTriggers(race, car, st) {
   const life = tyreLife(race, car);
   const i = st.indexOf(car);
   const ahead = st[i - 1], behind = st[i + 1];
-  const mate = playerCars(race).find(o => o !== car && !o.retired && !o.finished);
+  const mate = race.cars.find(o => o !== car && o.player && o.team === car.team && !o.retired && !o.finished);
   const boxing = car.boxCall || stopDue(car);
   const defaultCmp = () => {
     if (w > 0.15) return bestCompound(w, left * (race.wear || 1));

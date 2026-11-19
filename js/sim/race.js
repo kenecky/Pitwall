@@ -50,6 +50,7 @@ export class Race {
     track, teams, drivers, seed, weather = 'dry', gridPenalties = {},
     kind = 'race', laps = null, gridOrder = null, durationSec = null, fullLaps = null, caution = {}, difficulty = 'hard',
     playerTeam = null,
+    humanTeams = [],   // Mehrspieler: alle von Menschen gesteuerten Teams
   }) {
     this.playerTeam = playerTeam;   // Pit Wall: Team des Spielers (Teamchef)
     this.difficulty = difficulty;   // easy | medium | hard (Saison immer hard)
@@ -123,7 +124,7 @@ export class Race {
         timePens: [], serve: [], serving: null, tl: 0, warnings: 0, dsq: false,
         gridPos: 0,
         caution: Math.min(0.8, caution[drv.id] || 0),
-        player: drv.team === playerTeam,   // Pit Wall: Auto des Spielers
+        player: drv.team === playerTeam || humanTeams.includes(drv.team),   // Pit Wall: Auto eines menschlichen Teamchefs
         paceMode: 'normal', tyreWear: 0, boxCall: null, advice: null, tactic: 'normal', mood: 70,
       };
     });
@@ -646,7 +647,7 @@ export class Race {
         }
         const zone = tr.zones.find(z => inRange(tr, B.d, z.start, z.end));
         // Teamorder „Position halten“ bzw. Taktik ohne Angriffe (Position halten, Aufhalten)
-        const hold = (B.player && A.player && this.teamOrder === 'hold') || (B.player && tacticOf(B).pass === 0) || (this.isSession && A.team === B.team && this.givesTow(A));
+        const hold = (B.player && A.player && A.team === B.team && ((this.teamOrders && this.teamOrders[B.team.id]) || this.teamOrder) === 'hold') || (B.player && tacticOf(B).pass === 0) || (this.isSession && A.team === B.team && this.givesTow(A));
         if (zone && !banned && !hold) {
           const key = `${B.lap}:${zone.corner}`;
           const zoneName = zone.corner;

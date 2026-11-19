@@ -60,9 +60,16 @@ export const STRATEGISTS = {
   audi: 'Felix Hartmann', astonmartin: 'Emma Clarke', cadillac: 'Nate Morrison',
 };
 
+// Eigene Autos des Teamchefs am Gerät (Mehrspieler: mehrere menschliche Teams, race.playerTeam = mein Team)
 export function playerCars(race) {
+  return race.cars.filter(c => c.player && (!race.playerTeam || c.team.id === race.playerTeam));
+}
+// Alle von Menschen gesteuerten Autos (Mehrspieler: beide Teams)
+export function humanCars(race) {
   return race.cars.filter(c => c.player);
 }
+// Teamorder des eigenen Teams
+export const teamOrderOf = race => (race.teamOrders && race.playerTeam && race.teamOrders[race.playerTeam]) || race.teamOrder || 'free';
 
 const radio = (race, car, text) => race.emit('radio', `Teamfunk ${car.team.name} an ${car.id}: „${text}“`, { cars: [car.id], own: true });
 const fmt = (x, d = 1) => x.toFixed(d).replace('.', ',');
@@ -91,8 +98,9 @@ export function setErs(race, car, mode) {
 
 // ---------- Teamorder ----------
 export function setTeamOrder(race, order) {
-  if (race.teamOrder === order) return false;
-  race.teamOrder = order;
+  if (teamOrderOf(race) === order) return false;
+  race.teamOrders = race.teamOrders || {};
+  if (race.playerTeam) race.teamOrders[race.playerTeam] = order; else race.teamOrder = order;
   for (const c of playerCars(race)) {
     if (c.retired || c.finished) continue;
     radio(race, c, order === 'hold' ? 'Positionen halten, keine Angriffe auf den Teamkollegen.' : 'Ihr dürft frei fahren.');
@@ -115,7 +123,7 @@ export function swapCars(race) {
 
 // Die beiden eigenen Autos im Rennen, vorderes zuerst
 function activePair(race) {
-  const st = race.standings().filter(c => c.player && !c.retired && !c.finished);
+  const st = race.standings().filter(c => c.player && (!race.playerTeam || c.team.id === race.playerTeam) && !c.retired && !c.finished);
   return [st[0], st[1]];
 }
 
