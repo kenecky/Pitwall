@@ -20,7 +20,7 @@ import { WeatherPanel } from './ui/weatherPanel.js';
 import { weatherLabel, createWeather } from './sim/weather.js';
 import { distanceFor, LENGTHS } from './sim/length.js';
 import { unservedSecs, PENALTIES } from './control/stewards.js';
-import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, loadGame, clearGame, loadSetupLib, saveSetupLib } from './storage.js';
+import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, clearGame, loadAllGames, loadSetupLib, saveSetupLib } from './storage.js';
 import { serializeRace, restoreRace } from './sim/persist.js';
 import { newSeason, currentEntry, seasonOver, weekendParts, recordWeekend, driverStandings, teamStandings, finishOf, SPRINT_TRACKS } from './team/season.js';
 import { pressQuotes } from './team/press.js';
@@ -47,7 +47,7 @@ import { SETUP_KEYS, feedback, setupScore, WET_SHIFT, driverStyleText } from './
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 44;
+export const VERSION = 45;
 // Mehrspieler-Zustand (Gastgeber rechnet, Gast zeigt an und schickt Befehle) – siehe Abschnitt „Mehrspieler“ unten
 const mp = { role: null, net: null, code: '', connected: false, myTeam: null, hostTeam: null, guestTeam: null, guestSpeed: 1, guestPaused: false,
   mySpeed: 1, myPaused: false, phase: 'lobby', meta: null, sessKey: '', lastSnap: 0, replaying: false, guestReady: null, guestReturn: null,
@@ -238,7 +238,12 @@ const SESSION_KINDS = new Set(['fp', 'quali', 'sq']);
 let season = loadSeason();
 // Teamwerte für dieses Wochenende (Saison: Entwicklung, Personal, Antriebseinheit; KI-Teams entwickeln mit)
 const teamsNow = () => (wk && wk.season && season && season.mgmt ? teamsForWeekend(season, TEAMS, track) : TEAMS);
-let savedGame = null;     // gespeichertes Wochenende (zum Fortsetzen)
+let savedGame = null;     // gespeichertes Wochenende des aktuellen Modus (zum Fortsetzen)
+// Drei getrennte Spielstände: Einzelrennen, Saison, Mehrspieler (Gastgeber)
+const saves = { single: null, season: null, mp: null };
+function curSlot() { return mp.role ? 'mp' : settings.mode === 'season' ? 'season' : 'single'; }
+function syncSaved() { savedGame = saves[curSlot()]; }
+function dropSave(slot = curSlot()) { saves[slot] = null; if (slot === curSlot()) savedGame = null; clearGame(slot); }
 const isSeason = () => settings.mode === 'season';
 // Eigenes Team: in der Saison fest, im Einzelrennen frei wählbar
 const playerTeamId = () => (isSeason() && season ? season.teamId : settings.teamId);
@@ -350,7 +355,7 @@ function onGarage(car) {
 // Gespeichert wird das ganze Wochenende (Setup, Reifensätze, Ergebnisse) und die laufende Session.
 let lastSave = 0;
 function autosave() {
-  if (!race || !wk || mp.role) return;   // Mehrspieler: kein Spielstand
+  if (!race || !wk || mp.role === 'guest') return;   // Mehrspieler: nur der Gastgeber speichert
   const started = race.phase !== 'pre';
   let data;
   try {
@@ -362,18 +367,22 @@ function autosave() {
       kind: currentKind(wk), strategyDone: Boolean(race.strategyDone),
     };
   } catch { return; }
+  if (mp.role === 'host') Object.assign(data, { mode: 'mp', hostTeam: mp.hostTeam, guestTeam: mp.guestTeam, cfg: { trackId: settings.trackId, parts: settings.parts, length: settings.length, weatherMode: settings.weatherMode } });
+  const slot = curSlot();
+  saves[slot] = data;
   savedGame = data;
-  saveGame(data);
+  saveGame(data, slot);
 }
 
 async function resumeGame() {
   const d = savedGame;
   if (!d) return;
   if (d.mode === 'season' && (!season || season.teamId !== d.teamId)) { toast('Spielstand passt nicht zur Saison'); return; }
-  settings.mode = d.mode;
+  settings.mode = d.mode === 'mp' ? 'single' : d.mode;
   settings.length = d.length;
   settings.weatherMode = d.weather;
-  if (d.mode === 'single') { settings.teamId = d.teamId; settings.trackId = d.trackId; }
+  if (d.mode === 'single' || d.mode === 'mp') { settings.teamId = d.teamId; settings.trackId = d.trackId; }
+  if (d.mode === 'mp' && d.cfg) settings.parts = d.cfg.parts;
   saveSettings(settings);
   track = getTrack(d.trackId);
   wk = d.wk;
@@ -420,7 +429,7 @@ function renderResume() {
   $('resumeBtn').onclick = () => { sound.unlock(); resumeGame(); };
   $('dropSaveBtn').onclick = async () => {
     if (!(await pwConfirm('Spielstand verwerfen?', 'Das gespeicherte Wochenende wird gelöscht.', 'Verwerfen'))) return;
-    savedGame = null; clearGame(); renderResume();
+    dropSave(); renderResume();
   };
 }
 
@@ -492,7 +501,7 @@ $('seasonResetBtn').addEventListener('click', async () => {
   if (!(await pwConfirm('Saison neu starten?', 'Der bisherige Saisonstand geht verloren.', 'Neu starten'))) return;
   season = null;
   clearSeason();
-  if (savedGame && savedGame.mode === 'season') { savedGame = null; clearGame(); }
+  dropSave('season');
   $('seasonScreen').classList.add('hidden');
   newRace();
 });
@@ -500,6 +509,7 @@ function setMode(mode) {
   if (settings.mode === mode) return;
   settings.mode = mode;
   saveSettings(settings);
+  syncSaved();   // Spielstand des neuen Modus
   newRace();
 }
 // ---------- Abrechnung nach dem Rennwochenende (vor der Teamzentrale) ----------
@@ -683,7 +693,7 @@ function renderHQ() {
   const c = initCareer(season);
   if (seasonOver(season) || c.fired) { go.textContent = c.fired ? 'Ohne Team – Angebote unter Vorstand & Karriere' : `Saison ${season.year + 1} – unter Vorstand & Karriere`; go.disabled = true; }
   else if (m.phase === 'preseason' && !readyForRace(season)) { go.textContent = 'Erst die Aufgaben erledigen'; go.disabled = true; }
-  else if (savedGame && savedGame.mode === 'season') { go.textContent = 'Wochenende fortsetzen'; go.disabled = false; }
+  else if (saves.season) { go.textContent = 'Wochenende fortsetzen'; go.disabled = false; }
   else {
     const nx = nextEvent(season, SEASON_2026, trackLabel);
     go.innerHTML = nx ? `Weiter · ${fmtDate(nx.date)} · ${nx.kind === 'race' ? esc(nx.text) : EV_LABEL[nx.kind] || ''}` : 'Weiter';
@@ -848,7 +858,7 @@ $('hqClose').addEventListener('click', () => {
 // Weiter zum nächsten Termin im Kalender: Rennen → Wochenende starten, sonst Fertigstellung übernehmen
 $('hqGo').addEventListener('click', async () => {
   const m = season.mgmt;
-  if (savedGame && savedGame.mode === 'season') { $('hqScreen').classList.add('hidden'); resumeGame(); return; }
+  if (saves.season) { $('hqScreen').classList.add('hidden'); resumeGame(); return; }
   const nx = nextEvent(season, SEASON_2026, trackLabel);
   if (!nx) return;
   if (m.phase === 'preseason' && nx.kind !== 'race') { /* Vorsaison-Termine sind erlaubt */ }
@@ -944,7 +954,7 @@ $('hqBody').addEventListener('click', async e => {
   else if (b.dataset.talk) err = talkTo(season, b.dataset.talk, b.dataset.k);
   else if (b.dataset.extend) { if (!(await pwConfirm('Vertrag verlängern?', 'Ein Jahr länger, Gehalt +8 % und eine Unterschriftsprämie.', 'Verlängern'))) return; err = extendContract(season, b.dataset.extend); }
   else if (b.dataset.offer || b.dataset.newseason) {
-    if (savedGame && savedGame.mode === 'season') { toast('Erst das laufende Wochenende zu Ende fahren (oder verwerfen).', 3500); return; }
+    if (saves.season) { toast('Erst das laufende Wochenende zu Ende fahren (oder verwerfen).', 3500); return; }
     const id = b.dataset.offer || season.teamId;
     const name = TEAM_BY_ID[id].name;
     if (!(await pwConfirm(b.dataset.offer ? `Angebot von ${esc(name)} annehmen?` : `Neue Saison ${season.year + 1}`, b.dataset.offer ? 'Du wechselst das Team. Die Teamzentrale startet mit Budget, Personal und Zielen des neuen Teams.' : `Weiter mit ${esc(name)}.`, b.dataset.offer ? 'Annehmen' : 'Starten'))) return;
@@ -1066,7 +1076,7 @@ $('mpSetupBody').addEventListener('click', e => {
   if (b.dataset.mpsa === 'leave' || (b.dataset.mpsa === 'lobby' && false)) { if (mp.net) mp.net.send({ type: 'end' }); mpLeave(); return; }
   if (mp.role !== 'host') return;   // Gast: nur ansehen
   if (b.dataset.mpsa === 'lobby') { mp.phase = 'lobby'; $('mpSetup').classList.add('hidden'); mpSnap(true); showMp(); return; }
-  if (b.dataset.mpsa === 'start') { $('mpSetup').classList.add('hidden'); savedGame = null; clearGame(); startRace(); return; }
+  if (b.dataset.mpsa === 'start') { $('mpSetup').classList.add('hidden'); dropSave('mp'); startRace(); return; }
   if (b.dataset.mptrack) { settings.trackId = b.dataset.mptrack; }
   else if (b.dataset.mps) { settings[b.dataset.mps] = b.dataset.v; }
   else if (b.dataset.mppart) {
@@ -2553,8 +2563,7 @@ $('newRaceBtn').addEventListener('click', () => {
   finishSession(wk, race);
   if (wk.idx >= wk.seq.length) {
     // Wochenende vorbei: in der Saison Punkte übernehmen, Spielstand löschen
-    savedGame = null;
-    clearGame();
+    dropSave();
     if (wk.season && season) {
       const before = teamStandings(season, TEAMS).findIndex(x => x.t.id === season.teamId) + 1;
       const pts0 = season.teamPts[season.teamId] || 0;
@@ -2589,8 +2598,7 @@ $('newRaceBtn').addEventListener('click', () => {
 $('endWkBtn').addEventListener('click', () => {
   if (mp.role) { toast('Im Mehrspieler wird das Wochenende zu Ende gefahren.'); return; }
   if (wk.season) { toast('In der Saison wird jedes Wochenende zu Ende gefahren.'); return; }
-  savedGame = null;
-  clearGame();
+  dropSave();
   newRace();
 });
 
@@ -2700,7 +2708,7 @@ $('startBtn').addEventListener('click', async () => {
   if (mp.role === 'host' && !(mp.connected && mp.guestTeam)) { showMp(); toast('Erst muss der Mitspieler verbunden sein und ein Team gewählt haben.', 3000); return; }
   // Saison: alles läuft über die Teamzentrale (Vorsaison, Rennen, Karriere)
   if (isSeason() && season) { showHQ(); return; }
-  if (savedGame && savedGame.mode === 'season' && isSeason()) { /* Saison-Spielstand bleibt */ } else if (savedGame && !(await pwConfirm('Spielstand überschreiben?', 'Es gibt ein gespeichertes Wochenende. Neu beginnen?', 'Neu beginnen'))) return;
+  if (saves.season && isSeason()) { /* Saison-Spielstand bleibt */ } else if (savedGame && !(await pwConfirm('Spielstand überschreiben?', 'Es gibt ein gespeichertes Wochenende. Neu beginnen?', 'Neu beginnen'))) return;
   if (isSeason() && !season) {
     season = newSeason(settings.teamId);
     initManagement(season, TEAMS, DRIVERS);
@@ -2711,8 +2719,7 @@ $('startBtn').addEventListener('click', async () => {
     showHQ();
     return;
   }
-  savedGame = null;
-  clearGame();
+  dropSave();
   startRace();
 });
 $('menuBtn').addEventListener('click', () => {
@@ -2833,7 +2840,7 @@ function vibrate(pattern) {
 // ---------- Start ----------
 bootStep(70, 'Pit Wall wird eingerichtet …');
 newRace();
-loadGame().then(d => { if (d && d.v === 1) { savedGame = d; renderResume(); } }).catch(() => {});
+loadAllGames().then(all => { for (const k of Object.keys(saves)) saves[k] = all[k] && all[k].v === 1 ? all[k] : null; syncSaved(); renderResume(); }).catch(() => {});
 bootStep(92, 'Startseite wird gezeichnet …');
 requestAnimationFrame(frame);
 bootDone();
@@ -2874,6 +2881,15 @@ $('mpClose').addEventListener('click', () => $('mpScreen').classList.add('hidden
 $('mpWaitMenu').addEventListener('click', () => showMp());
 $('modeMulti').addEventListener('click', () => showMp());
 
+// Gastgeber: gespeichertes Mehrspieler-Wochenende fortsetzen (der Mitspieler bekommt sein Team von damals)
+function mpResumeCard() {
+  const d = saves.mp;
+  if (!d) return '';
+  const T = id => (id && TEAM_BY_ID[id] ? esc(TEAM_BY_ID[id].name) : '–');
+  const t = TRACKS[d.trackId];
+  return `<div class="pw-mcard"><b>💾 Gespeichertes Mehrspieler-Wochenende</b><small>${esc(t ? t.grandPrix.replace('Großer Preis ', 'GP ') : d.trackId)} · ${esc(SESSION_NAME[d.kind] || '')} · Spieler 1: ${T(d.hostTeam)} · Spieler 2: ${T(d.guestTeam)}</small>
+    <div class="pw-hqbtns">${mp.resume ? '<button data-mp="newgame">Neues Wochenende statt dessen</button>' : '<button class="go" data-mp="resume">Dieses Wochenende fortsetzen</button>'}</div></div>`;
+}
 function renderMp() {
   const b = $('mpBody');
   if (!mp.role) {
@@ -2893,8 +2909,9 @@ function renderMp() {
     const ready = mp.connected && mp.guestTeam;
     b.innerHTML = `<div class="pw-mcard pw-hero"><small>CODE FÜR DEINEN MITSPIELER</small><b class="pw-mpbig">${mp.code}</b>
       <small>${mp.connected ? `✅ Verbunden${mp.guestTeam ? ` · Mitspieler fährt <b>${esc(TEAM_BY_ID[mp.guestTeam].name)}</b>` : ' · Mitspieler wählt sein Team …'}` : '⏳ Warte auf den Mitspieler …'}</small></div>
-      <div class="pw-label">DEIN TEAM</div><div class="pw-mpteams">${teamBtns(mp.guestTeam)}</div>
-      <div class="pw-hqbtns"><button data-mp="leave">Mehrspieler beenden</button><button class="go" data-mp="next" ${ready ? '' : 'disabled'}>Weiter</button></div>
+      ${mpResumeCard()}
+      ${mp.resume ? '' : `<div class="pw-label">DEIN TEAM</div><div class="pw-mpteams">${teamBtns(mp.guestTeam)}</div>`}
+      <div class="pw-hqbtns"><button data-mp="leave">Mehrspieler beenden</button><button class="go" data-mp="next" ${ready ? '' : 'disabled'}>${mp.resume ? 'Fortsetzen' : 'Weiter'}</button></div>
       <div class="pw-hint">Mit „Weiter“ geht es für beide zu den Einstellungen (Strecke, Wetter, Dauer, Sessions).</div>`;
     return;
   }
@@ -2916,12 +2933,30 @@ $('mpBody').addEventListener('click', async e => {
   const a = b.dataset.mp;
   if (a === 'close') { $('mpScreen').classList.add('hidden'); return; }
   if (a === 'leave') { if (mp.net) mp.net.send({ type: 'end' }); mpLeave(); return; }
+  if (a === 'resume' && mp.role === 'host' && saves.mp) {
+    mp.resume = saves.mp;
+    settings.teamId = mp.resume.hostTeam; mp.myTeam = mp.hostTeam = mp.resume.hostTeam;
+    mp.guestTeam = mp.resume.guestTeam;   // Mitspieler bekommt sein Team von damals
+    renderMp(); mpSnap(true);
+    return;
+  }
+  if (a === 'newgame' && mp.role === 'host') { mp.resume = null; mp.guestTeam = null; renderMp(); mpSnap(true); return; }
   if (a === 'rejoin' && mp.role === 'guest') {
     b.disabled = true; b.textContent = 'Verbinde …';
     try { mp.net && mp.net.close(); } catch { /* egal */ }
     try { mp.net = await mpConnect({ role: 'guest', code: mp.code, onMessage: mpOnMessage, onOpen: mpOnOpen, onClose: mpOnClose }); }
     catch (err) { mp.error = err.message; renderMp(); return; }
     $('mpScreen').classList.add('hidden');
+    return;
+  }
+  if (a === 'next' && mp.role === 'host' && mp.resume) {
+    // gespeichertes Wochenende laden und für beide weiterführen
+    $('mpScreen').classList.add('hidden');
+    savedGame = mp.resume;
+    mp.resume = null;
+    mp.phase = 'run';
+    await resumeGame();
+    mpSnap(true);
     return;
   }
   if (a === 'next' && mp.role === 'host') {
@@ -2955,14 +2990,18 @@ $('mpBody').addEventListener('click', async e => {
   }
 });
 function mpLeave() {
+  // Gastgeber: laufendes Wochenende sichern – es lässt sich später im Mehrspieler fortsetzen
+  if (mp.role === 'host' && race && race.phase !== 'pre' && wk && wk.idx < wk.seq.length) { try { autosave(); } catch { /* egal */ } }
   try { mp.net && mp.net.close(); } catch { /* egal */ }
   const wasGuest = mp.role === 'guest';
   Object.assign(mp, { role: null, net: null, connected: false, guestTeam: null, hostTeam: null, myTeam: null, meta: null, error: '', menuOpen: false, guestMenu: false, lostGuest: false, guestPaused: false, guestSpeed: 1, phase: 'lobby', otherMenuShown: false, noData: false });
   mpWait('');
+  mp.sessKey = ''; mp.setupSig = ''; mp.lobbySig = ''; mpLastStage = ''; ui.built = null;
   $('mpScreen').classList.add('hidden');
   $('startScreen').classList.remove('mp-ro');
   $('mpSetup').classList.add('hidden');
   if (wasGuest) { race = null; Object.assign(settings, loadSettings()); }
+  syncSaved();
   newRace();
 }
 function mpOnOpen() {
@@ -3035,6 +3074,7 @@ function mpOnMessage(m) {
   switch (m.type) {
     case 'team':
       if (m.team === mp.hostTeam || !TEAM_BY_ID[m.team]) return;
+      if (mp.resume && m.team !== mp.resume.guestTeam) { mpSnap(true); return; }   // Fortsetzen: Team steht fest
       if (mp.lostGuest && m.team === mp.guestTeam) {   // Mitspieler ist zurück
         mp.lostGuest = false; mp.guestPaused = false;
         toast('👥 Mitspieler ist wieder da – weiter geht’s.', 3000);

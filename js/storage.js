@@ -64,18 +64,41 @@ function idb(mode, fn) {
     tx.onerror = () => { db.close(); reject(tx.error); };
   }));
 }
-export async function saveGame(data) {
-  try { await idb('readwrite', st => st.put(data, SAVE_KEY)); } catch {
-    try { localStorage.setItem(LS_SAVE, JSON.stringify(data)); } catch { /* voll/gesperrt */ }
+// Drei getrennte Spielstände: Einzelrennen ('single'), Saison ('season'), Mehrspieler ('mp')
+export const SLOTS = ['single', 'season', 'mp'];
+const lsKey = slot => `${LS_SAVE}-${slot}`;
+export async function saveGame(data, slot) {
+  try { await idb('readwrite', st => st.put(data, slot)); } catch {
+    try { localStorage.setItem(lsKey(slot), JSON.stringify(data)); } catch { /* voll/gesperrt */ }
   }
 }
-export async function loadGame() {
-  try { const d = await idb('readonly', st => st.get(SAVE_KEY)); if (d) return d; } catch { /* Fallback */ }
-  try { const raw = localStorage.getItem(LS_SAVE); return raw ? JSON.parse(raw) : null; } catch { return null; }
+export async function loadGame(slot) {
+  try { const d = await idb('readonly', st => st.get(slot)); if (d) return d; } catch { /* Fallback */ }
+  try { const raw = localStorage.getItem(lsKey(slot)); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
-export async function clearGame() {
-  try { await idb('readwrite', st => st.delete(SAVE_KEY)); } catch { /* egal */ }
+export async function clearGame(slot) {
+  try { await idb('readwrite', st => st.delete(slot)); } catch { /* egal */ }
+  try { localStorage.removeItem(lsKey(slot)); } catch { /* egal */ }
+}
+// Alter gemeinsamer Spielstand ('current') → in den passenden neuen Speicherplatz übernehmen.
+// Der alte wird erst gelöscht, wenn der neue nachweislich geschrieben ist.
+async function migrateOld() {
+  let old = null, fromIdb = false;
+  try { old = await idb('readonly', st => st.get(SAVE_KEY)); fromIdb = Boolean(old); } catch { /* egal */ }
+  if (!old) { try { const raw = localStorage.getItem(LS_SAVE); old = raw ? JSON.parse(raw) : null; } catch { old = null; } }
+  if (!old) return;
+  const slot = old.mode === 'season' ? 'season' : 'single';
+  if (!(await loadGame(slot))) await saveGame(old, slot);
+  const check = await loadGame(slot);
+  if (!check) return;   // nicht sicher übernommen – alten Stand behalten
+  if (fromIdb) { try { await idb('readwrite', st => st.delete(SAVE_KEY)); } catch { /* egal */ } }
   try { localStorage.removeItem(LS_SAVE); } catch { /* egal */ }
+}
+export async function loadAllGames() {
+  try { await migrateOld(); } catch { /* alter Stand bleibt liegen */ }
+  const out = {};
+  for (const slot of SLOTS) { try { out[slot] = await loadGame(slot); } catch { out[slot] = null; } }
+  return out;
 }
 
 // ---------- Gespeicherte Setups (je Strecke und Fahrer: trocken/nass), saisonübergreifend ----------
