@@ -413,14 +413,17 @@ export function planTime(race, car, wk, s) {
   const ends = [...stops.map(x => x.lap), laps];
   const warn = [];
   const taken = new Set();
+  const stints = [];   // je Stint: Mischung, Runden, Satz (neu / gebrauchte Runden), Reifenzustand am Ende in %
   let t = 0, from = 0;
   pat.forEach((c, i) => {
     const n = ends[i] - from;
-    let age0 = 0;
+    let age0 = 0, setLaps = 0;
     if (wk && wk.sets[car.id]) {
+      // immer der frischeste Satz: neu, sonst der mit den wenigsten Runden
       const st = wk.sets[car.id].filter(x => x.c === c && !taken.has(x)).sort((a, b) => a.laps - b.laps)[0];
-      if (st) { taken.add(st); age0 = st.laps; } else warn.push(`Kein Satz ${COMPOUNDS[c].name} mehr im Kontingent.`);
+      if (st) { taken.add(st); age0 = st.laps; setLaps = st.lapCount ?? Math.round(st.laps); } else warn.push(`Kein Satz ${COMPOUNDS[c].name} mehr im Kontingent.`);
     }
+    stints.push({ c, n, used: age0 > 0.05, setLaps, life: Math.max(0, Math.round(100 - (age0 + n * w) / COMPOUNDS[c].cliff * 100)) });
     if (n < 1) warn.push(`Stint ${i + 1} ist zu kurz.`);
     for (let a = 0; a < n; a++) { const age = age0 + a * w; t += tyreLoss(c, age) + (age > COMPOUNDS[c].cliff * 0.95 ? 0.8 : 0); }
     if (!COMPOUNDS[c].wet && age0 + n * w > COMPOUNDS[c].cliff) warn.push(`${COMPOUNDS[c].name} in Stint ${i + 1}: ${n} Runden – über der Verschleißgrenze (~${Math.round(Math.max(1, COMPOUNDS[c].cliff - age0) / w)} Rd).`);
@@ -430,7 +433,7 @@ export function planTime(race, car, wk, s) {
   t += stops.length * loss;
   const dry = pat.filter(c => !COMPOUNDS[c].wet);
   if (race.kind !== 'sprint' && race.weather.wetness < 0.2 && pat.every(c => !COMPOUNDS[c].wet) && new Set(dry).size < 2) warn.push('Regel: Im Rennen müssen zwei verschiedene Trockenmischungen gefahren werden.');
-  return { t, warn };
+  return { t, warn, stints };
 }
 
 export function applyStrategy(race, car, s) {

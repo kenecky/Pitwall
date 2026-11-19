@@ -133,7 +133,7 @@ export class Session extends Race {
     this.clock = 0;
     // Sektorzeiten (violett/grün/gelb) gelten je Session bzw. Q1/Q2/Q3: zurücksetzen
     this.bestSec = [Infinity, Infinity, Infinity];
-    for (const c of this.cars) { c.pbSec = [Infinity, Infinity, Infinity]; c.lastSecs = null; c.curSecs = []; }
+    for (const c of this.cars) { c.pbSec = [Infinity, Infinity, Infinity]; c.lastSecs = null; c.curSecs = []; c.tblS = null; c.tblT = null; }
     this.segFlag = false;
     this.segState = 'run';
     const seg = this.segment;
@@ -188,10 +188,10 @@ export class Session extends Race {
         }
       } else {
         // KI lässt auf der Aufwärmrunde oft Abstand zum Vordermann (freie Fahrt), wie der Teamchef
-        const last = { depart: Math.max(15, seg.dur - out - lap * r.range(0.15, 0.7)), push: 1, compound: 'S', fuel: 0.05, gap: r.chance(0.5) };
+        const last = { depart: Math.max(15, seg.dur - out - lap * r.range(0.15, 0.7)), push: 1, compound: 'S', fuel: 0.05, gap: r.chance(0.85) };
         const cycle = out + lap * 2 + 20;     // Garage → schnelle Runde → zurück
         runs = seg.dur >= 2 * cycle + 60
-          ? [{ depart: r.range(20, seg.dur * 0.3), push: r.chance(0.4) ? 2 : 1, compound: 'S', fuel: 0.08 }, last]
+          ? [{ depart: r.range(20, seg.dur * 0.3), push: r.chance(0.4) ? 2 : 1, compound: 'S', fuel: 0.08, gap: r.chance(0.7) }, last]
           : [{ ...last, depart: r.range(Math.min(20, last.depart), last.depart) }];
       }
       return runs.filter(x => x.depart >= from - 1);
@@ -272,11 +272,14 @@ export class Session extends Race {
     for (const c of this.cars) {
       if (c.retired || c.inGarage) { c.secIdx = null; c.curSecs = []; c.lastSecs = null; continue; }
       const idx = Math.min(2, Math.floor((((c.d % L) + L) % L) / (L / 3)));
-      if (c.secIdx === null || c.secIdx === undefined) { c.secIdx = idx; c.secStart = this.time; c.curSecs = []; c.secPush = false; continue; }
+      if (c.secIdx === null || c.secIdx === undefined) { c.secIdx = idx; c.secStart = this.time; c.curSecs = []; c.curT = []; c.secPush = false; continue; }
       if (idx === c.secIdx) continue;
       const done = c.secIdx;
-      const t = this.time - c.secStart;
-      c.secStart = this.time;
+      // genauer Überfahrzeitpunkt der Sektorgrenze (im Schritt interpoliert)
+      const over = (((c.d % L) + L) % L) - idx * (L / 3);
+      const tx = this.time - (c.move > 0 ? Math.min(DT, DT * over / c.move) : 0);
+      const t = tx - c.secStart;
+      c.secStart = tx;
       c.secIdx = idx;
       if (c.secPush && c.curSecs.length === done) {
         if (!c.pbSec) c.pbSec = [Infinity, Infinity, Infinity];
@@ -288,16 +291,21 @@ export class Session extends Race {
             if (o === c) continue;
             if (o.curSecs && o.curSecs[done] === 'p') o.curSecs[done] = 'g';
             if (o.lastSecs && o.lastSecs[done] === 'p') o.lastSecs[done] = 'g';
+            if (o.tblS && o.tblS[done] === 'p') o.tblS[done] = 'g';
           }
         }
         else if (t < c.pbSec[done]) st = 'g';
         if (t < c.pbSec[done]) c.pbSec[done] = t;
         c.curSecs.push(st);
+        (c.curT || (c.curT = [])).push(t);
+        // Zeiten-Tabelle: Sektoren der laufenden bzw. letzten schnellen Runde
+        c.tblS = [...c.curSecs]; c.tblT = [...c.curT];
       }
       if (idx === 0) {
         // neue Runde: fertige schnelle Runde bis Ende Sektor 1 weiter anzeigen
         if (c.curSecs.length === 3) c.lastSecs = c.curSecs;
         c.curSecs = [];
+        c.curT = [];
         c.secPush = c.prog && c.prog.phase === 'push';
       } else if (idx === 1) c.lastSecs = null;
     }
@@ -477,7 +485,10 @@ export class Session extends Race {
     const progress = Math.min(1, Math.max(0, car.d / (this.laps * this.track.L)));
     // Streckenentwicklung: Gummi auf der Strecke (Q1 → Q3 immer schneller, Regen wäscht ihn ab)
     const evolution = -(this.kind === 'fp' ? 0.6 : 0.9) * (this.rubber || 0);
-    return base - 2.2 * (1 - progress) + 2.2 * (car.fuel ?? 0.2) + evolution + (car.dirty ? 0.4 : 0) ;
+    // Schnelle Runde auf gebrauchten Reifen: der Spitzen-Grip ist weg (Stand zu Beginn der Runde)
+    const a0 = car.prog && car.prog.phase === 'push' ? car.ageLap0 || 0 : 0;
+    const peak = a0 > 1.6 && !COMPOUNDS[car.compound].wet ? Math.min(1.0, 0.28 + 0.045 * (a0 - 1.6)) : 0;
+    return base - 2.2 * (1 - progress) + 2.2 * (car.fuel ?? 0.2) + evolution + (car.dirty ? 0.4 : 0) + peak;
   }
 
   // Autos auf Aufwärm-/Auslaufrunde lassen Autos auf schneller Runde vorbei – meistens
@@ -560,6 +571,7 @@ export class Session extends Race {
 
   onSessionLap(car, lapTime) {
     const p = car.prog;
+    car.ageLap0 = (car.tyreWear ?? car.tyreAge) * (this.wear || 1);   // Reifenalter zu Beginn der neuen Runde
     if (p.phase === 'push' && !car.inPit) {
       const rec = {
         id: ++this.lapSeq, seg: this.segIdx, time: lapTime, valid: !car.compromised, compound: car.compound,
@@ -621,7 +633,7 @@ export class Session extends Race {
       this.emit('rc', `Ausgeschieden in ${seg.id}: ${out.map(c => c.id).join(', ')}`);
       this.segState = 'break';
       this.bestSec = [Infinity, Infinity, Infinity];
-      for (const c of this.cars) { c.pbSec = [Infinity, Infinity, Infinity]; c.lastSecs = null; c.curSecs = []; }
+      for (const c of this.cars) { c.pbSec = [Infinity, Infinity, Infinity]; c.lastSecs = null; c.curSecs = []; c.tblS = null; c.tblT = null; }
       this.breakLeft = this.info.brk ?? 420;
       this.breakRunning = false;
       this.emit('info', `Pause – die Pausenzeit läuft, sobald alle Autos zurück in der Box sind.`);

@@ -587,3 +587,20 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
 - Test (zwei Tabs, ?mptest): Lobby, Teamwahl, Strategie beider, Rennstart, Befehl des Gasts (Pushen), gemeinsames Tempo,
   Training mit Rausfahren des Gasts, Debriefing/Ergebnis/Reifenabgabe, Warten des Gastgebers, weiter zur Strategie.
   Nicht getestet: echte Verbindung über PeerJS (in der Testumgebung nicht erreichbar).
+
+### v42 – Reifen-Zählfehler, Renn-Reiter, Zeiten-Tabelle in Sessions, gebrauchte Reifen im Qualifying, 1×-Marke, Strategie-Infos
+- Fehler: Beim erneuten Aufziehen eines gebrauchten Satzes wurde der bisherige Verschleiß doppelt gezählt
+  (set.laps = base + tyreWear, wobei tyreWear schon base enthielt) – Sätze wurden mit jedem Aufziehen „älter“
+  (z. B. 30/62 statt echter Runden), Reifen schlechter als echt. Jetzt zählt nur der Verschleiß seit dem Aufziehen
+  (car.wear0). Anzeigen „Rd“ zeigen die echten Runden (lapCount). Alte Spielstände behalten die zu hohen Werte.
+- Renn-Reiter: zweite Zeile mit Tempo- und Zweikampf-Einstellung (z. B. „PUSH · ÜBERHOLEN“).
+- ZEITEN in Training/Qualifying: gleiche Tabelle wie im Rennen (renderSessionTable): Bestzeit bzw. Abstand
+  (Kopf antippen: zum Ersten / zum Vordermann), Sektorzeiten der laufenden bzw. letzten schnellen Runde
+  (violett/grün/gelb, interpoliert), Reifen mit Runden, Status (OUT/IN/BOX/⏱); Details mit bester/letzter Runde + Reifen.
+- Gebrauchte Reifen auf schneller Runde: Spitzen-Grip fehlt (Reifenalter zu Beginn der Runde > 1,6:
+  0,28 s + 0,045 s je Runde, max. 1 s). Test Suzuka: 3 Runden alt +0,34 s, 8 Runden +0,84 s.
+- KI im Qualifying: Abstand auf der Aufwärmrunde bei 70 % der ersten und 85 % der letzten Runs.
+- Tempo-Menü (lange drücken) in Sessions: „1× ab Restzeit“ (z. B. 2:30) – einmalig 1× beim Erreichen, danach frei.
+- Strategiebesprechung: je Stint Satz neu / gebraucht (Runden) – immer der frischeste Satz –, Reifenzustand beim Stopp
+  bzw. im Ziel in % (ändert sich mit dem Stopp-Zeitpunkt); Wahrscheinlichkeit für VSC, Safety Car und rote Flagge über
+  die Renndistanz (js/data/neutralStats.js, erzeugt mit tools/gen_neutral_stats.mjs aus 12 Rennen je Strecke).

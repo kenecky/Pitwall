@@ -114,10 +114,11 @@ export function tyreHook(race, wk, car) {
   set.base = set.laps;
   if (set.lapCount === undefined) set.lapCount = Math.round(set.laps);   // gefahrene Runden auf diesem Satz (gesamt)
   car.tyreWear = set.laps / w;
+  car.wear0 = car.tyreWear;   // Stand beim Aufziehen (sonst würde der alte Verschleiß doppelt gezählt)
 }
 // Laufend: gefahrene Runden auf dem montierten Satz (in Runden der vollen Distanz)
 export function trackSetWear(race, car) {
-  if (car.curSet && !car.inGarage) car.curSet.laps = (car.curSet.base || 0) + car.tyreWear * (race.wear || 1);
+  if (car.curSet && !car.inGarage) car.curSet.laps = (car.curSet.base || 0) + Math.max(0, car.tyreWear - (car.wear0 || 0)) * (race.wear || 1);
 }
 
 // ---------- Setup ----------

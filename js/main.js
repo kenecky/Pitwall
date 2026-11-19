@@ -25,7 +25,8 @@ import { serializeRace, restoreRace } from './sim/persist.js';
 import { newSeason, currentEntry, seasonOver, weekendParts, recordWeekend, driverStandings, teamStandings, finishOf, SPRINT_TRACKS } from './team/season.js';
 import { pressQuotes } from './team/press.js';
 import { updateRaceData } from './team/raceData.js';
-import { renderRaceTable, strategyChart } from './ui/raceTable.js';
+import { renderRaceTable, renderSessionTable, strategyChart } from './ui/raceTable.js';
+import { NEUTRAL_STATS } from './data/neutralStats.js';
 import { initCareer, careerAfterWeekend, careerSeasonEnd, acceptOffer, startNewSeason } from './team/career.js';
 import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
@@ -46,7 +47,7 @@ import { SETUP_KEYS, feedback, setupScore, WET_SHIFT, driverStyleText } from './
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 41;
+export const VERSION = 42;
 // Mehrspieler-Zustand (Gastgeber rechnet, Gast zeigt an und schickt Befehle) – siehe Abschnitt „Mehrspieler“ unten
 const mp = { role: null, net: null, code: '', connected: false, myTeam: null, hostTeam: null, guestTeam: null, guestSpeed: 1, guestPaused: false,
   mySpeed: 1, myPaused: false, phase: 'lobby', meta: null, sessKey: '', lastSnap: 0, replaying: false, guestReady: null, guestReturn: null,
@@ -314,6 +315,7 @@ function resetUi() {
   ui.noticeSeen = 0;
   ui.run = {};
   ui.qa = {};
+  ui.slowAt = null;
   ui.olWarn = {};
   ui.ffAsked = false;
   ff = false;
@@ -1196,6 +1198,10 @@ function frame(now) {
       acc -= DT;
       n++;
       if (watchEvents()) break;
+      // vom Teamchef gesetzte Marke: einmalig 1× ab Restzeit (nur im gewählten Abschnitt)
+      if (ui.slowAt != null && race.isSession && race.segIdx === ui.slowSeg && race.segState === 'run' && race.remaining <= ui.slowAt) {
+        ui.slowAt = null; setSpeed(1); acc = 0; toast('⏱ Marke erreicht – Tempo 1×', 2500); vibrate([60, 40, 60]); break;
+      }
     }
   }
   if (race) {
@@ -1296,9 +1302,10 @@ function refreshUi() {
   $('wmBtn').classList.toggle('hidden', !(wk && wk.season && season));
   if (weatherPanel.isOpen) { weatherPanel.updateNow(); if (weatherPanel.offset === 0) weatherPanel.drawRadar(); }
   if (!touching) {
-    $('panel-timing').classList.toggle('race-tt', !race.isSession);
+    $('panel-timing').classList.add('race-tt');   // Rennen und Sessions: gleiche Tabelle mit Sektorzeiten
+    $('timing').classList.toggle('tt-sess', race.isSession);
     if (activeTab === 'timing') {
-      if (race.isSession) renderTiming($('timing'), race, { gapMode: settings.gapMode, selected: map.selected });
+      if (race.isSession) renderSessionTable($('timing'), race, map.selected, settings.gapMode);
       else renderRaceTable($('timing'), race, map.selected);
     }
     if (settings.showTower) renderTower($('tower'), race, map.selected, settings.gapMode);
@@ -1431,6 +1438,10 @@ function renderWall() {
     const tpos = car.retired ? 'OUT' : `P${st.indexOf(car) + 1}`;
     const tyreTab = car.retired ? '' : ` · <i class="pw-tyre ${car.compound}">${car.compound}</i> ${tyreLaps(car)} Rd`;
     tab.querySelector('span').innerHTML = `${tpos}${tyreTab}${tmsg ? ' <i class="pw-dot">📻</i>' : ''}${car.redQueued && !car.redTyre ? ' <i class="pw-dot red">REIFEN?</i>' : ''}`;
+    // zweite Zeile: Tempo- und Zweikampf-Einstellung
+    const tsub = tab.querySelector('em') || tab.insertBefore(document.createElement('em'), tab.querySelector('.pw-tprog'));
+    const subTxt = car.retired || car.finished ? '' : `${PACE[car.paceMode || 'normal'].short} · ${TACTIC[car.tactic || 'normal'].short}`;
+    if (tsub.textContent !== subTxt) tsub.textContent = subTxt;
     tabProgress(tab, car);
     // Rote Flagge: Reifenwahl in der Boxengasse
     const red = el.querySelector('[data-f="red"]');
@@ -1694,7 +1705,7 @@ function runSet(car) {
 // Alle Sätze eines Fahrers als Auswahl-Chips (neu / gebraucht mit Runden)
 function setChips(car, selId, attr = 'data-setid', filter = null) {
   const list = wk.sets[car.id].filter(s => !filter || s.c === filter).sort((a, b) => 'SMHIW'.indexOf(a.c) - 'SMHIW'.indexOf(b.c) || a.laps - b.laps);
-  return list.map(st => `<button ${attr}="${st.id}" class="${st.id === selId ? 'on' : ''}${st === car.curSet && !car.inGarage ? ' mounted' : ''}"><i class="pw-tyre ${st.c}">${st.c}</i>${st.laps < 0.05 ? 'neu' : `${Math.round(st.laps)} Rd`}</button>`).join('');
+  return list.map(st => `<button ${attr}="${st.id}" class="${st.id === selId ? 'on' : ''}${st === car.curSet && !car.inGarage ? ' mounted' : ''}"><i class="pw-tyre ${st.c}">${st.c}</i>${st.laps < 0.05 ? 'neu' : `${st.lapCount ?? Math.round(st.laps)} Rd`}</button>`).join('');
 }
 // Verkehrs-Prognose fürs Rausfahren: Autos auf der Aufwärmrunde und Autos, die gleich aus der Garage kommen
 function trafficForecast(car) {
@@ -1892,7 +1903,7 @@ function renderSessionWall() {
     const go = el.querySelector('[data-act="go"]');
     const blocked = race.phase !== 'running' || race.segState !== 'run' || race.segFlag || (race.neutral && race.neutral.type === 'red');
     if (car.inGarage) {
-      go.textContent = set ? `RAUSFAHREN · ${COMPOUNDS[cfg.c].name} ${set.laps < 0.05 ? 'neu' : `gebr. ${Math.round(set.laps)} Rd`}` : 'KEIN SATZ VERFÜGBAR';
+      go.textContent = set ? `RAUSFAHREN · ${COMPOUNDS[cfg.c].name} ${set.laps < 0.05 ? 'neu' : `gebr. ${set.lapCount ?? Math.round(set.laps)} Rd`}` : 'KEIN SATZ VERFÜGBAR';
       go.disabled = out || !set || blocked || car.retired;
       go.className = 'pw-boxbtn pw-go';
     } else {
@@ -2096,6 +2107,13 @@ function drawGhost() {
 // ---------- Rennstrategie vor dem Start ----------
 const stratPick = {};
 let stratOpts = {};
+// Wahrscheinlichkeit für VSC, Safety Car und rote Flagge auf dieser Strecke über die Renndistanz (aus Simulationen)
+function neutralOdds() {
+  const st = NEUTRAL_STATS[race.track.def.id];
+  if (!st) return '';
+  const p = rate => Math.round((1 - Math.exp(-rate * race.laps)) * 100);
+  return `<div class="pw-wxrow"><span class="ic">🚨</span><div><b>Neutralisierungen (${race.laps} Runden)</b><small>VSC ~${p(st.vsc)} % · Safety Car ~${p(st.sc)} % · Rote Flagge ~${p(st.red)} % – Erfahrungswerte dieser Strecke (inkl. Regenrisiko)</small></div></div>`;
+}
 const stratCustom = {};   // eigene/angepasste Strategie je Fahrer (key 'C')
 function showStrategy() {
   const cars = playerCars(race);
@@ -2120,7 +2138,9 @@ function stratDetail(c) {
   let from = 0;
   const rows = [s.start, ...stops.map(x => x.compound)].map((k, i) => {
     const to = ends[i], n = to - from;
-    const row = `<div class="pw-stint"><span class="pw-tyre ${k}">${k}</span><div><b>Stint ${i + 1}: ${COMPOUNDS[k].name}</b><small>Runde ${from + 1}–${to} · ${n} Rd</small></div>
+    const sx = ev.stints[i] || {};
+    const lifeCol = sx.life >= 40 ? 'pos' : sx.life >= 15 ? 'warn' : 'neg';
+    const row = `<div class="pw-stint"><span class="pw-tyre ${k}">${k}</span><div><b>Stint ${i + 1}: ${COMPOUNDS[k].name} <small>(${sx.used ? `gebr. ${sx.setLaps} Rd` : 'neu'})</small></b><small>Runde ${from + 1}–${to} · ${n} Rd · ${i < stops.length ? 'beim Stopp' : 'im Ziel'} noch <b class="${lifeCol}">${sx.life ?? '–'} %</b></small></div>
       <button data-sa="cmp" data-car="${c.id}" data-i="${i}" title="Mischung wechseln">⟳</button></div>`
       + (i < stops.length ? `<div class="pw-stop"><span>🔧 Stopp in Runde <b>${stops[i].lap}</b></span>
         <button data-sa="earlier" data-car="${c.id}" data-i="${i}">−1 Rd</button><button data-sa="later" data-car="${c.id}" data-i="${i}">+1 Rd</button>
@@ -2141,6 +2161,7 @@ function renderStrategy() {
   const w = weatherText({ wx: race.weather, dur: race.laps * race.track.baseLap * 1.05 });
   $('stratBody').innerHTML = `<div class="pw-sum">Rennstratege <b>${esc(who)}</b> hat zwei Varianten je Fahrer gerechnet (${race.laps} Runden, Boxenverlust ~${fmt(pitLoss(race, cars[0]))} s). Du kannst jede Variante anpassen oder eine eigene anlegen.</div>`
     + `<button class="pw-wxrow pw-wxbtn" data-wx="1"><span class="ic">${w.icon}</span><div><b>Wetter im ${race.kind === 'sprint' ? 'Sprint' : 'Rennen'}: ${w.main}</b><small>${w.sub} · Antippen für Regenradar</small></div></button>`
+    + neutralOdds()
     + cars.map((c, n) => `<div class="pw-strat" style="--tc:${c.team.color}"><h3><span class="pw-snum">${n + 1}</span>${esc(c.driver.first)} ${esc(c.driver.last)} <small>#${c.driver.number} · Startplatz ${c.gridPos}</small></h3>
       ${stratOpts[c.id].map(s => `<button class="pw-opt${stratPick[c.id] === s.key ? ' on' : ''}" data-car="${c.id}" data-k="${s.key}"><b>${s.key} · ${esc(s.name)}</b><div class="tyres">${tyres(s)}</div><div>${esc(s.note)}</div></button>`).join('')}
       <button class="pw-opt${stratPick[c.id] === 'C' ? ' on' : ''}" data-car="${c.id}" data-k="C"><b>✏️ Eigene Strategie</b>${stratCustom[c.id] ? `<div class="tyres">${tyres(stratCustom[c.id])}</div>` : '<div>Startet als Kopie der gewählten Variante – dann frei anpassen.</div>'}</button>
@@ -2543,7 +2564,8 @@ function renderSpeedBtns() {
 const spd = { timer: null, open: false, hot: null };
 function openSpeedMenu() {
   const m = $('speedMenu');
-  m.innerHTML = SPEEDS.map(v => `<button data-sp="${v}" class="${v === mySpeed() ? 'cur' : ''}">${v}×</button>`).join('');
+  m.innerHTML = SPEEDS.map(v => `<button data-sp="${v}" class="${v === mySpeed() ? 'cur' : ''}">${v}×</button>`).join('')
+    + (race && race.isSession ? `<div class="pw-slow"><span>1× ab Restzeit</span><input id="slowAt" placeholder="2:30" inputmode="numeric" value="${ui.slowAt != null ? mmss(ui.slowAt) : ''}"><button data-slow="1">${ui.slowAt != null ? 'Ändern' : 'OK'}</button>${ui.slowAt != null ? '<button data-slow="0">✕</button>' : ''}</div>` : '');
   const r = $('speedBtn').getBoundingClientRect();
   m.classList.remove('hidden');
   m.style.top = `${r.bottom + 6}px`;
@@ -2579,6 +2601,19 @@ document.addEventListener('pointerup', e => {
   if (spd.hot) { setSpeed(spd.hot); closeSpeedMenu(); }
 });
 $('speedMenu').addEventListener('click', e => {
+  const sl = e.target.closest('[data-slow]');
+  if (sl) {
+    if (sl.dataset.slow === '0') { ui.slowAt = null; toast('1×-Marke gelöscht', 1500); closeSpeedMenu(); return; }
+    const v = String($('slowAt').value || '').trim().replace(/[^0-9:.,]/g, '');
+    const parts = v.split(/[:.,]/).map(Number);
+    const sec = parts.length > 1 ? parts[0] * 60 + (parts[1] || 0) : (parts[0] || 0) * 60;
+    if (!sec || !race || !race.isSession) { toast('Zeit wie 2:30 eingeben', 1800); return; }
+    ui.slowAt = sec; ui.slowSeg = race.segIdx;
+    toast(`Bei ${mmss(sec)} Restzeit schaltet das Spiel einmal auf 1×.`, 2500);
+    closeSpeedMenu();
+    return;
+  }
+  if (e.target.closest('#slowAt')) return;
   const b = e.target.closest('[data-sp]');
   if (b) { setSpeed(Number(b.dataset.sp)); closeSpeedMenu(); }
 });
@@ -2642,6 +2677,7 @@ $('labelsBtn').addEventListener('click', () => {
 });
 $('labelsBtn').classList.toggle('active', Boolean(settings.showLabels));
 $('timing').addEventListener('click', e => {
+  if (e.target.closest('.tt-head')) { settings.gapMode = settings.gapMode === 'interval' ? 'leader' : 'interval'; saveSettings(settings); refreshUi(); return; }
   const row = e.target.closest('[data-id]');
   if (!row || !race) return;
   const id = row.dataset.id;
@@ -2997,6 +3033,9 @@ function mpGuestFrame(now) {
   for (const c of race.cars) renderD.set(c, c.d + (c.inGarage || c.retired || c.finished ? 0 : (c.v || 0) * dt));
   map.paused = !run;
   map.draw(race, renderD);
+  if (ui.slowAt != null && race.isSession && race.segIdx === ui.slowSeg && race.segState === 'run' && race.remaining <= ui.slowAt) {
+    ui.slowAt = null; setSpeed(1); toast('⏱ Marke erreicht – Tempo 1×', 2500); vibrate([60, 40, 60]);
+  }
   updateSound();
   if (now - lastUi > 300) {
     lastUi = now;

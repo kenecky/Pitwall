@@ -40,3 +40,32 @@ export function strategyChart(race) {
   }).join('');
   return `<div class="sc-legend">${['S', 'M', 'H', 'I', 'W'].map(k => `<span><i class="sc-seg ${k}"></i>${COMPOUNDS[k].name}</span>`).join('')}</div>${rows}`;
 }
+
+// Timing-Tabelle in Training/Qualifying: Bestzeit/Abstand, Sektoren der laufenden bzw. letzten schnellen Runde,
+// Reifen mit Runden, Status (Aufwärm-/Auslaufrunde, Box)
+export function renderSessionTable(el, race, selected, gapMode) {
+  let st = race.standings();
+  if (race.phase !== 'finished') st = st.filter(c => c.elimSeg === null || c.elimSeg === undefined);
+  const lead = st[0] && race.rankTime(st[0]);
+  const head = `<div class="tt-row tt-head"><span>P</span><span></span><span>Fahrer</span><span class="r">${gapMode === 'interval' ? 'Int.' : 'Zeit'}</span><span class="r">S1</span><span class="r">S2</span><span class="r">S3</span><span>Reifen</span><span class="r">St</span></div>`;
+  const tyreOf = l => (l && l.compound ? ` <i class="pw-tyre ${l.compound}">${l.compound}</i>` : '');
+  const rows = st.map((c, i) => {
+    const t = race.rankTime(c);
+    let gap = '–';
+    if (t) {
+      if (i === 0) gap = formatLap(t);
+      else { const ref = gapMode === 'interval' ? race.rankTime(st[i - 1]) : lead; gap = ref ? `+${(t - ref).toFixed(3).replace('.', ',')}` : formatLap(t); }
+    }
+    const S = c.tblS || [], T = c.tblT || [];
+    const sx = k => (T[k] !== undefined ? `<span class="tt-s ${S[k] || ''}">${T[k].toFixed(3).replace('.', ',')}</span>` : '<span class="tt-s">–</span>');
+    const ph = c.prog && c.prog.phase;
+    const stat = c.retired ? 'OUT' : c.inGarage ? 'BOX' : c.inPit ? 'BOX' : ph === 'out' ? 'OUT' : ph === 'cool' ? 'IN' : '⏱';
+    const laps = c.curSet && c.curSet.lapCount !== undefined ? c.curSet.lapCount : c.tyreAge;
+    const sel = selected === c.id;
+    const best = (c.sLaps || []).filter(l => l.valid).reduce((b, l) => (!b || l.time < b.time ? l : b), null);
+    const last = (c.sLaps || [])[(c.sLaps || []).length - 1];
+    const det = sel ? `<div class="tt-det">#${c.driver.number} ${c.driver.first} ${c.driver.last} · ${c.team.name} · Beste ${best ? best.label + tyreOf(best) : '–'} · Letzte ${last ? last.label + tyreOf(last) : '–'} · ${(c.sLaps || []).length} gezeitete Runden${c.retired && c.dnf ? ` · Ausfall: ${c.dnf}` : ''}</div>` : '';
+    return `<div class="tt-row${c.player ? ' mine' : ''}${sel ? ' sel' : ''}${c.retired ? ' out' : ''}" data-id="${c.id}"><span class="p">${i + 1}</span><span class="tb" style="background:${c.team.color}"></span><span class="n">${c.id}</span><span class="r">${gap}</span>${sx(0)}${sx(1)}${sx(2)}<span class="ty"><i class="pw-tyre ${c.compound}">${c.compound}</i>${laps}</span><span class="r">${stat}</span></div>${det}`;
+  }).join('');
+  el.innerHTML = head + rows;
+}
