@@ -15,6 +15,14 @@ export const DEV = {
   motor: { name: 'Motor',            short: 'MOTOR', hint: 'mehr Tempo, vor allem auf schnellen Strecken' },
   rel:   { name: 'Zuverlässigkeit',  short: 'ZUV.',  hint: 'weniger Defekte' },
 };
+// Reglement der nächsten Saison: wird ab Saisonmitte festgelegt, danach kann das neue Auto entwickelt werden
+export const REG_ROUND = 12;
+export const REGS = [
+  { id: 'aero', name: 'Neues Aero-Reglement', text: 'weniger Abtrieb am Unterboden, neue Front- und Heckflügel' },
+  { id: 'motor', name: 'Neues Motorenreglement', text: 'mehr Elektro-Anteil, neuer nachhaltiger Kraftstoff' },
+  { id: 'both', name: 'Großes Gesamtpaket', text: 'neue Aerodynamik und geänderte Antriebseinheit' },
+];
+export const NEXT_DEV = { name: 'Auto für die neue Saison', short: 'NEUES AUTO', hint: 'wirkt erst ab der nächsten Saison – kostet jetzt Geld und Budget-Cap' };
 export const DEV_SIZE = {
   small: { name: 'Kleines Update', cost: 4, weeks: 3, gain: 0.6 },
   big:   { name: 'Großes Paket',   cost: 11, weeks: 7, gain: 1.7 },
@@ -287,6 +295,22 @@ export function staffCostPerRace(m) {
   return Object.values(m.posts || {}).reduce((s, p) => s + (p ? p.salary : 0), 0) / 24;
 }
 
+// Neue Saison mit neuem Reglement: Kräfteverhältnis neu – Zufall des Reglements + wie gut jedes Team entwickelt hat
+export function regShakeUp(old, teams) {
+  const m = old.mgmt;
+  if (!m || !m.regs) return null;
+  const raw = {};
+  for (const t of teams) {
+    const shake = (hash(`${old.year}${t.id}shake`) - 0.5) * 3;          // wer das Reglement besser trifft
+    const work = t.id === old.teamId ? (m.nextDev || 0) : ((m.ai[t.id] || {}).next || 0);
+    raw[t.id] = shake + work * 1.1;
+  }
+  const mean = Object.values(raw).reduce((a, b) => a + b, 0) / teams.length;
+  const adj = {};
+  for (const t of teams) adj[t.id] = Math.round(clamp(raw[t.id] - mean, -6, 6) * 10) / 10;
+  return adj;
+}
+
 // ---------- Werte des eigenen Teams und der KI-Teams für ein Wochenende ----------
 export function teamsForWeekend(season, teams, track) {
   const m = season.mgmt;
@@ -295,13 +319,13 @@ export function teamsForWeekend(season, teams, track) {
   const wn = (o.rwing - 1) / 10;                 // 0 = schnelle Strecke, 1 = viel Abtrieb
   return teams.map(t => {
     if (t.id === season.teamId) {
-      const pace = t.pace + m.dev.aero * (0.5 + wn) + m.dev.motor * (1.5 - wn);
+      const pace = t.pace + (season.regAdj ? season.regAdj[t.id] || 0 : 0) + m.dev.aero * (0.5 + wn) + m.dev.motor * (1.5 - wn);
       const maxWear = Math.max(0, ...Object.keys(m.drivers).map(id => puCar(m, id).wear));
       const rel = t.reliability + m.dev.rel * 2 - Math.max(0, maxWear - 60) * 0.3;
       return { ...t, pace: Math.min(100, pace), reliability: clamp(rel, 40, 99), pitCrew: clamp(t.pitCrew + (postRating(m, 'crew') - 70) / 3.5 + (bLvl(m, 'pit') - 1) * 1.5, 60, 99) };
     }
     const a = m.ai[t.id] || { pace: 0, rel: 0 };
-    return { ...t, pace: Math.min(100, t.pace + a.pace), reliability: clamp(t.reliability + a.rel, 40, 99) };
+    return { ...t, pace: Math.min(100, t.pace + (season.regAdj ? season.regAdj[t.id] || 0 : 0) + a.pace), reliability: clamp(t.reliability + a.rel, 40, 99) };
   });
 }
 
@@ -336,14 +360,15 @@ function spend(m, amount, what, capRelevant = true) {
 
 export function startProject(season, type, size) {
   const m = season.mgmt, s = DEV_SIZE[size];
-  if (!DEV[type] || !s) return 'Unbekanntes Projekt.';
+  if ((!DEV[type] && type !== 'next') || !s) return 'Unbekanntes Projekt.';
+  if (type === 'next' && !m.regs) return `Das Reglement für die nächste Saison steht erst nach Rennen ${REG_ROUND} fest.`;
   const maxP = maxProjects(bLvl(m, 'factory'));
   if (m.projects.length >= maxP) return `Höchstens ${maxP} Projekt${maxP > 1 ? 'e' : ''} gleichzeitig – das Entwicklungszentrum ausbauen.`;
   if (m.money < s.cost) return 'Nicht genug Geld.';
   if (capLeft(m) < s.cost) return 'Das würde die Budgetobergrenze überschreiten.';
-  spend(m, s.cost, `${DEV[type].name}: ${s.name}`);
+  spend(m, s.cost, `${type === 'next' ? NEXT_DEV.name : DEV[type].name}: ${s.name}`);
   const weeks = projectWeeks(m, size);
-  const gain = s.gain * devFactor(m, type);
+  const gain = s.gain * devFactor(m, type === 'next' ? (m.regs.type === 'motor' ? 'motor' : 'aero') : type) * (type === 'next' ? 1.2 : 1);
   m.projects.push({ type, size, start: season.date, done: addDays(season.date, weeks * 7), gain: Math.round(gain * 100) / 100 });
   return null;
 }
@@ -474,13 +499,21 @@ export function afterWeekend(season, teams, drivers, res, used, moods) {
   // Antriebseinheiten: Verschleiß kommt aus dem Fahren (main → m.puCars)
   for (const id of own) { const p = puCar(m, id); if (p.wear >= 70) notes.push(`${id}: Antriebseinheit ${Math.round(p.wear)} % verschlissen – Leistung sinkt, Defektrisiko steigt.`); }
 
-  // KI-Teams entwickeln auch (reiche Teams etwas schneller)
+  // Reglement der nächsten Saison: ab Saisonmitte von der Rennleitung festgelegt
+  if (!m.regs && season.round >= REG_ROUND) {
+    const r = REGS[Math.floor(hash(`${season.year}regs`) * REGS.length)];
+    m.regs = { type: r.id, year: season.year + 1, date: season.date };
+    notes.push(`📜 Die Rennleitung hat das Reglement für ${season.year + 1} festgelegt: ${r.name} (${r.text}). Ab sofort kann das Auto für die neue Saison entwickelt werden (Entwicklung → Neues Auto). Das kostet Geld und zählt zum Budget-Cap.`);
+  }
+  // KI-Teams entwickeln auch (reiche Teams etwas schneller); nach dem neuen Reglement teilen sie die Kräfte
   for (const t of teams) {
     if (t.id === season.teamId) continue;
     const a = m.ai[t.id];
     const rich = paceRank(teams, t.id) <= 4 ? 1.15 : 1;
-    a.pace = Math.round((a.pace + hash(`${season.round}${t.id}p`) * 0.32 * rich) * 100) / 100;
+    const split = m.regs ? 0.6 : 1;
+    a.pace = Math.round((a.pace + hash(`${season.round}${t.id}p`) * 0.32 * rich * split) * 100) / 100;
     a.rel = Math.round((a.rel + hash(`${season.round}${t.id}r`) * 0.25) * 100) / 100;
+    if (m.regs) a.next = Math.round(((a.next || 0) + hash(`${season.round}${t.id}n`) * 0.55 * rich) * 100) / 100;
   }
 
   // Fahrer: Stimmung aus Funk-Stimmung im Rennen, Ergebnis und Teamkollege
@@ -693,7 +726,7 @@ export function calendarEvents(season, calendar, trackName) {
     if (i < season.round) return;
     ev.push({ date: raceDate(season, e), kind: 'race', round: e.round, track: e.track, text: trackName(e.track) });
   });
-  for (const p of (m && m.projects) || []) ev.push({ date: p.done, kind: 'dev', text: `${DEV[p.type].name}: ${DEV_SIZE[p.size].name} fertig` });
+  for (const p of (m && m.projects) || []) ev.push({ date: p.done, kind: 'dev', text: `${p.type === 'next' ? NEXT_DEV.name : DEV[p.type].name}: ${DEV_SIZE[p.size].name} fertig` });
   if (m && m.construction) ev.push({ date: m.construction.done, kind: 'build', text: `${BUILDINGS[m.construction.key].name} Stufe ${m.construction.lvl} fertig` });
   for (const e of (m && m.events) || []) if (!e.done) ev.push({ date: e.date, kind: 'sponsor', id: e.id, text: `${SPONSOR_EVENTS[e.type].name} · ${e.sponsor}` });
   if (m) ev.push(...agendaEvents(season, calendar, trackName));
@@ -710,6 +743,11 @@ export function advanceTo(season, date) {
   const notes = [];
   if (date > season.date) season.date = date;
   for (const p of m.projects.filter(x => x.done <= season.date)) {
+    if (p.type === 'next') {
+      m.nextDev = Math.round(((m.nextDev || 0) + p.gain) * 100) / 100;
+      notes.push(`🧪 Entwicklung fürs neue Auto abgeschlossen: +${p.gain.toFixed(1).replace('.', ',')} (wirkt ab der nächsten Saison).`);
+      continue;
+    }
     m.dev[p.type] = Math.round((m.dev[p.type] + p.gain) * 100) / 100;
     notes.push(`🔧 Upgrade fertig: ${DEV[p.type].name} +${p.gain.toFixed(1).replace('.', ',')} – wirkt ab dem nächsten Rennen.`);
   }

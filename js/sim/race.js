@@ -344,7 +344,7 @@ export class Race {
     let deg = age * C.deg * (C.wet && w < 0.3 ? 3 : 1);          // Regenreifen überhitzen auf trockener Strecke
     if (age > C.cliff) deg += (age - C.cliff) * 0.22;
     const dmg = car.damage === 'wing' ? 1.2 : 0;
-    const wet = wetLoss(car.compound, w) + w * (100 - car.driver.wet) * 0.025;
+    const wet = wetLoss(car.compound, w, tr.baseLap) + w * (100 - car.driver.wet) * 0.025;
     const careful = (car.caution || 0) * 0.3;                   // vorsichtiger Fahrer: bis 0,3 s langsamer
     // Frische Reifen müssen erst auf Temperatur kommen: in der Runde aus der Box langsamer (Hart am stärksten)
     const fresh = car.freshD != null ? car.d - car.freshD : Infinity;
@@ -695,7 +695,7 @@ export class Race {
     const T = this.teamWx || (this.teamWx = {});
     const tw = T[car.team.id] || (T[car.team.id] = { trend: 0.25 + this.rng.next() * 0.8, call: 0.6 + this.rng.next() * 3.0, bias: (this.rng.next() - 0.5) * 0.16 });
     const wf = Math.min(1, Math.max(0, w + (wx.rain - w) * tw.trend));  // erwarteter Trend der nächsten Runden
-    const loss = id => wetLoss(id, wf) + (COMPOUNDS[id].wet ? 0 : COMPOUNDS[id].offset);
+    const loss = id => wetLoss(id, wf, this.track.baseLap) + (COMPOUNDS[id].wet ? 0 : COMPOUNDS[id].offset);
     const best = bestCompound(Math.min(1, Math.max(0, wf + tw.bias)), wearLeft);
     if (best === car.compound || (!COMPOUNDS[best].wet && !COMPOUNDS[car.compound].wet)) return;
     if (car.tyreCall === undefined) car.tyreCall = tw.call * (0.8 + this.rng.next() * 0.4);   // Fahrer etwas unterschiedlich

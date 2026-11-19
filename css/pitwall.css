@@ -501,3 +501,13 @@
 .pw-stop button { padding: 0 8px; }
 .pw-hint.bad { color: #fca5a5; }
 .pw-laps .pw-tyre { width: 16px; height: 16px; font-size: 8.5px; border-width: 2px; vertical-align: -3px; }
+.pw-retsets button.on { border-color: #f87171 !important; background: rgba(248,113,113,.15) !important; }
+/* v38: gespeicherte Setups */
+.pw-ssave { display: grid; gap: 6px; margin-top: 4px; }
+.pw-ssave > div { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,.04); }
+.pw-ssave b { font-size: 12px; color: #fff; }
+.pw-ssave small { grid-column: 1; font: 600 10.5px var(--mono); color: #aab0bf; }
+.pw-ssave span { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 5px; }
+.pw-ssave button { height: 30px; padding: 0 9px; border-radius: 6px; background: #262c37; border: 2px solid #0c0e12; color: #e6e9ef; font: 700 11px var(--mono); }
+.pw-ssave button:disabled { opacity: .4; }
+.pw-sslock [data-sload] { opacity: .35; pointer-events: none; }

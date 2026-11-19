@@ -57,7 +57,20 @@ function simulateUsage(wk, carId, kind) {
   }
 }
 
-// Rückgabe nach dem Training: die meistgefahrenen Sätze, aber je ein Medium und Hard bleibt fürs Rennen
+// Pflicht-Abgabe nach einer Session (Anzahl Sätze je Fahrer): nur nach dem Training
+export function returnCount(wk, kind) { return kind === 'fp' ? (wk.sprintWk ? RETURN.sprint : RETURN.normal) : 0; }
+// Vorschlag der Ingenieure: die meistgefahrenen Sätze, aber je ein Medium und Hard bleibt fürs Rennen
+export function suggestReturn(wk, carId) {
+  const copy = { ...wk, sets: { [carId]: [...wk.sets[carId]] }, returned: {} };
+  const before = new Set(copy.sets[carId]);
+  returnSets(copy, carId);
+  return [...before].filter(x => !copy.sets[carId].includes(x)).map(x => x.id);
+}
+// Abgabe nach Wahl des Teamchefs
+export function returnChosen(wk, carId, ids) {
+  wk.sets[carId] = wk.sets[carId].filter(x => !ids.includes(x.id));
+  wk.returned[carId] = (wk.returned[carId] || 0) + ids.length;
+}
 export function returnSets(wk, carId) {
   const n = wk.sprintWk ? RETURN.sprint : RETURN.normal;
   const sets = wk.sets[carId];
@@ -119,7 +132,7 @@ export function applyWeekend(race, wk) {
     if (c.player && c.id in wk.setup && !wk.setup[c.id]) wk.setup[c.id] = startSetup(race.track, wk.seed, c.id);
     if (c.player && wk.setup[c.id] && !wk.autoSetup) {
       const s = wk.setup[c.id] = migrateSetup(wk.setup[c.id]);
-      const d = setupEffect(race.track, s, 0), w = setupEffect(race.track, s, 1);
+      const d = setupEffect(race.track, s, 0, c.id), w = setupEffect(race.track, s, 1, c.id);
       c.su = { dry: d.dt, wet: w.dt, wd: d.wear, ww: w.wear };
     } else {
       // KI (und eigene Autos ohne Training): Setup auf KI-Niveau
@@ -146,7 +159,8 @@ export function finishSession(wk, race) {
   const kind = currentKind(wk);
   const st = race.standings();
   wk.results[kind] = st.map((c, i) => ({ id: c.id, pos: i + 1, best: race.isSession ? race.rankTime(c) : null, retired: c.retired, dsq: c.dsq }));
-  if (kind === 'fp') for (const id of Object.keys(wk.sets)) returnSets(wk, id);
+  if (kind === 'fp') for (const id of Object.keys(wk.sets)) if (!(wk.manualReturn && wk.manualReturn[id])) returnSets(wk, id);
+  wk.manualReturn = null;
   if (kind === 'quali') wk.grid.race = race.resultOrder();
   if (kind === 'sq') wk.grid.sprint = race.resultOrder();
   // Startplatzstrafen aus der Session für das nächste Rennen

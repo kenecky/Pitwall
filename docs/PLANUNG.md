@@ -538,3 +538,20 @@ im Hintergrund. Wir treffen die Entscheidungen an der Boxenmauer – und später
   - Qualifying: KI-Windschatten öfter (Chance 0,45 + Wert der Strecke), KI baut in der Hälfte der letzten Runs
     Abstand auf der Aufwärmrunde auf.
   - Nachher: Verstappen als KI Ø P7,3 / 3 Podien, Spieler mit Dauer-Pushen Ø P6,4 / 3 Podien.
+
+### v37–v39 – Regenreifen, Debriefing/Ergebnis/Reifenabgabe, Fahrstil und Setup-Bibliothek, neues Reglement
+- Regenreifen (wetLoss als Anteil der Basisrunde): Inter ~8–12 % langsamer als trocken, Regenreifen ~13–16 %.
+  Slicks bis ~22 % Nässe vorne, Inter bis ~65 %, darüber Regenreifen (Inter: Aquaplaning). Auf trockener Strecke
+  überhitzen beide stark.
+- Nach dem Training drei Schritte mit „Weiter“: 1. Debriefing, 2. Ergebnis, 3. Reifenabgabe.
+- Reifenabgabe: Teamchef wählt je Fahrer die Pflicht-Sätze (normal 6, Sprint-Wochenende 2) – Vorschlag der Ingenieure
+  vorausgewählt, Anzeige was bleibt. Nur nach dem Training Pflicht (andere Sessions: keine Abgabe).
+- Fahrstil je Fahrer (driverPref aus der ID): mag Unter- oder Übersteuern, harte oder weiche Abstimmung. Verschiebt sein
+  persönliches Optimum (Frontflügel, Bremsbalance, Differenzial, Federung) – gleiches Setup ist nicht für beide Fahrer
+  gleich gut. Rückmeldungen und Ingenieur-Einschätzung je Fahrer; Fahrstil wird beim Setup angezeigt.
+- Setups speichern/laden: je Strecke und Fahrer ein Trocken- und ein Regen-Setup (localStorage „pw-setups-v1“),
+  bleibt über Saisons erhalten. Im Training (Garage) und im Debriefing.
+- Neues Reglement: Nach Rennen 12 legt die Rennleitung das Reglement der nächsten Saison fest (Aero, Motor oder beides).
+  Danach Projekte „Auto für die neue Saison“ (Geld + Budget-Cap, belegen Projektplätze). KI-Teams teilen ihre Kräfte
+  (aktuelle Entwicklung 60 %, dazu Entwicklung fürs neue Auto). Zur neuen Saison: Kräfteverhältnis neu
+  (regShakeUp: Zufall des Reglements ±1,5 + Entwicklung, auf den Feld-Durchschnitt bezogen, max. ±6 Pace-Punkte).

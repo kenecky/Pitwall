@@ -77,3 +77,12 @@ export async function clearGame() {
   try { await idb('readwrite', st => st.delete(SAVE_KEY)); } catch { /* egal */ }
   try { localStorage.removeItem(LS_SAVE); } catch { /* egal */ }
 }
+
+// ---------- Gespeicherte Setups (je Strecke und Fahrer: trocken/nass), saisonübergreifend ----------
+const SETUP_LIB = 'pw-setups-v1';
+export function loadSetupLib() {
+  try { return JSON.parse(localStorage.getItem(SETUP_LIB) || '{}'); } catch { return {}; }
+}
+export function saveSetupLib(lib) {
+  try { localStorage.setItem(SETUP_LIB, JSON.stringify(lib)); } catch { /* Speicher voll/gesperrt */ }
+}

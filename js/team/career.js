@@ -1,6 +1,6 @@
 // Pit Wall – Karriere als Teamchef: Ruf über alle Saisons, Angebote anderer Teams, Entlassung, Teamwechsel,
 // neue Saison. Zustand in season.career (wird in jede neue Saison übernommen).
-import { initManagement } from './management.js';
+import { initManagement, regShakeUp } from './management.js';
 import { newSeason } from './season.js';
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -112,6 +112,9 @@ export function startNewSeason(old, teams, drivers, teamId = old.teamId) {
   s.date = `${s.year}-01-19`;
   s.career = { ...initCareer(old), offers: [], fired: false };
   if (!s.career.teams.includes(teamId)) s.career.teams.push(teamId);
+  // Neues Reglement: Kräfteverhältnis aus der Entwicklung der Vorsaison
+  s.regAdj = regShakeUp(old, teams);
+  if (s.regAdj && old.mgmt && old.mgmt.regs) s.regNote = { type: old.mgmt.regs.type, mine: s.regAdj[teamId] || 0 };
   initManagement(s, teams, drivers);
   return s;
 }

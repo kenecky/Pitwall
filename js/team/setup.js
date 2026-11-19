@@ -69,6 +69,28 @@ export function optimum(track, wet = false) {
   return wet ? w : dry;
 }
 
+// Fahrstil: Jeder Fahrer mag sein Auto etwas anders – das verschiebt sein persönliches Optimum.
+// u < 0: mag Untersteuern (stabiles Heck), u > 0: mag Übersteuern (spitze Front)
+export function driverPref(id) {
+  if (!id) return { u: 0, st: 0, off: {} };
+  const u = hash(id + 'style') * 2 - 1, st = Math.round((hash(id + 'stiffpref') - 0.5) * 2.4);
+  const off = { fwing: Math.round(u * 1.6), brake: -Math.round(u * 1.4), diff: -Math.round(u * 1.2), stiff: st };
+  return { u, st, off };
+}
+export function driverStyleText(id) {
+  const p = driverPref(id);
+  const a = p.u < -0.33 ? 'mag ein stabiles Heck und leichtes Untersteuern' : p.u > 0.33 ? 'mag eine spitze Front und leichtes Übersteuern' : 'fährt am liebsten neutral';
+  const b = p.st > 0 ? ', eher hart abgestimmt' : p.st < 0 ? ', eher weich abgestimmt' : '';
+  return a + b;
+}
+function optFor(track, wet, driverId) {
+  const o = optimum(track, wet);
+  if (!driverId) return o;
+  const off = driverPref(driverId).off, out = {};
+  for (const k of Object.keys(o)) out[k] = clampK(k, o[k] + (off[k] || 0));
+  return out;
+}
+
 // Zeitverlust einer Einstellung gegenüber einem Optimum
 function lossVs(o, s) {
   let dt = 0;
@@ -81,9 +103,9 @@ function lossVs(o, s) {
 }
 
 // Wirkung: Rundenzeit (s) und Reifenverschleiß-Faktor bei Nässe wet (0 = trocken … 1 = nass)
-export function setupEffect(track, s, wet = 0) {
+export function setupEffect(track, s, wet = 0, driverId = null) {
   const w = Math.max(0, Math.min(1, wet));
-  const dry = lossVs(optimum(track), s), rain = lossVs(optimum(track, true), s);
+  const dry = lossVs(optFor(track, false, driverId), s), rain = lossVs(optFor(track, true, driverId), s);
   const dt = (1 - w) * dry.dt + w * rain.dt;
   const x = w > 0.5 ? rain : dry;
   const wear = 1 + 0.03 * Math.abs(x.bal) + 0.02 * Math.abs(x.d.stiff) + 0.015 * Math.abs(x.d.diff) + (x.d.rwing < 0 ? 0.012 * -x.d.rwing : 0);
@@ -91,13 +113,13 @@ export function setupEffect(track, s, wet = 0) {
 }
 
 // Note 0–100 % fürs Setup (100 = perfekt) – trocken bzw. nass
-export function setupScore(track, s, wet = 0) {
-  return Math.round(100 * Math.max(0, 1 - setupEffect(track, s, wet).dt / 1.1));
+export function setupScore(track, s, wet = 0, driverId = null) {
+  return Math.round(100 * Math.max(0, 1 - setupEffect(track, s, wet, driverId).dt / 1.1));
 }
 
 // Rückmeldung des Fahrers nach einer Ausfahrt bei Nässe wet. r = Zufall
 export function feedback(track, s, driver, r, wet = 0) {
-  const e = setupEffect(track, s, wet);
+  const e = setupEffect(track, s, wet, driver.id);
   const acc = Math.min(1, Math.max(0.25, (driver.consistency - 55) / 40));
   // Wahrnehmung mit Rauschen: ungenaue Fahrer verwechseln Ursachen öfter
   const noise = k => (hash(`${r}${k}`) - 0.5) * 2 * (1 - acc) * 2.6;

@@ -20,7 +20,7 @@ import { WeatherPanel } from './ui/weatherPanel.js';
 import { weatherLabel, createWeather } from './sim/weather.js';
 import { distanceFor, LENGTHS } from './sim/length.js';
 import { unservedSecs, PENALTIES } from './control/stewards.js';
-import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, loadGame, clearGame } from './storage.js';
+import { loadSettings, saveSettings, loadSeason, saveSeason, clearSeason, saveGame, loadGame, clearGame, loadSetupLib, saveSetupLib } from './storage.js';
 import { serializeRace, restoreRace } from './sim/persist.js';
 import { newSeason, currentEntry, seasonOver, weekendParts, recordWeekend, driverStandings, teamStandings, finishOf, SPRINT_TRACKS } from './team/season.js';
 import { pressQuotes } from './team/press.js';
@@ -29,7 +29,7 @@ import { renderRaceTable, strategyChart } from './ui/raceTable.js';
 import { initCareer, careerAfterWeekend, careerSeasonEnd, acceptOffer, startNewSeason } from './team/career.js';
 import {
   initManagement, teamsForWeekend, afterWeekend, seasonEnd, damageFrom, engineerEstimate, startProject, buyPart, newPowerUnit,
-  extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, PU_RATE, puCar, puLoss, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
+  extendContract, talkTo, expectedPoints, goalText, money, CAP, OPS, PU_ALLOWANCE, REG_ROUND, REGS, NEXT_DEV, PU_RATE, puCar, puLoss, DEV, DEV_SIZE, PARTS, POSTS, CONCEPTS, CONCEPT_COST,
   migrateManagement, preseasonTasks, readyForRace, signTitle, signPartner, dropPartner, hire, chooseConcept, startSeason, devFactor, staffCostPerRace,
   migrateBuildings, BUILDINGS, BUILD_MAX, buildCost, buildWeeks, projectWeeks, addDays, fmtDate, weeksBetween, raceDate, migrateCalendar, calendarEvents, nextEvent, advanceTo, resolveSponsorEvent, migrateEvents, SPONSOR_EVENTS, agendaDialog, resolveAgenda, setBookingContext, startBuilding, bLvl, maxProjects, startNego, negoAction, negoSign, negoCancel,
 } from './team/management.js';
@@ -41,12 +41,12 @@ import {
 import { radioStep, answer, openMessage, ownCall, OWN_CALLS, moodLabel } from './team/radio.js';
 
 import { Session } from './sim/session.js';
-import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT } from './team/weekend.js';
-import { SETUP_KEYS, feedback, setupScore, WET_SHIFT } from './team/setup.js';
+import { createWeekend, currentKind, nextKind, applyWeekend, finishSession, setSummary, setsOf, trackSetWear, SESSION_NAME, SESSION_SHORT, returnCount, suggestReturn, returnChosen } from './team/weekend.js';
+import { SETUP_KEYS, feedback, setupScore, WET_SHIFT, driverStyleText } from './team/setup.js';
 import { protestCases, protestKind, protestArgs, protestsLeft, fileProtest, MAX_PROTESTS } from './team/protest.js';
 import { ScenePlayer } from './ui/scenePlayer.js';
 
-export const VERSION = 36;
+export const VERSION = 39;
 
 // ---------- Ladeseite ----------
 const BOOT = { steps: [[35, 'Strecken und Simulation geladen …']] };
@@ -614,8 +614,9 @@ function renderHQ() {
     }
     h += '<div class="pw-label">UPGRADES</div>' + Object.entries(DEV).map(([k, d]) => `<div class="pw-mcard"><b>${d.name}</b><small>${d.hint} · Ertrag ×${devFactor(m, k).toFixed(2).replace('.', ',')} durch dein Personal</small>
       <div class="pw-hqbtns">${Object.entries(DEV_SIZE).map(([s, z]) => `<button data-dev="${k}" data-size="${s}">${z.name}<small>${money(z.cost)} · ${projectWeeks(m, s)} Wochen · +${(z.gain * devFactor(m, k)).toFixed(1).replace('.', ',')}</small></button>`).join('')}</div></div>`).join('')
-      + `<div class="pw-label">LAUFENDE PROJEKTE (max. ${maxProjects(bLvl(m, 'factory'))} – Entwicklungszentrum)</div>${m.projects.length ? m.projects.map(p => `<div class="pw-mcard"><b>${DEV[p.type].name}</b><small>${DEV_SIZE[p.size].name} · fertig am ${fmtDate(p.done, true)} (in ${weeksBetween(season.date, p.done).toString().replace('.', ',')} Wochen) · +${p.gain.toFixed(2).replace('.', ',')}</small></div>`).join('') : '<div class="pw-hint">Keine.</div>'}
-      <div class="pw-hint">Die anderen Teams entwickeln auch – wer stehen bleibt, fällt zurück.</div>`;
+      + `<div class="pw-label">LAUFENDE PROJEKTE (max. ${maxProjects(bLvl(m, 'factory'))} – Entwicklungszentrum)</div>${m.projects.length ? m.projects.map(p => `<div class="pw-mcard"><b>${p.type === 'next' ? NEXT_DEV.name : DEV[p.type].name}</b><small>${DEV_SIZE[p.size].name} · fertig am ${fmtDate(p.done, true)} (in ${weeksBetween(season.date, p.done).toString().replace('.', ',')} Wochen) · +${p.gain.toFixed(2).replace('.', ',')}</small></div>`).join('') : '<div class="pw-hint">Keine.</div>'}
+      <div class="pw-hint">Die anderen Teams entwickeln auch – wer stehen bleibt, fällt zurück.</div>`
+      + nextCarHtml(m);
   } else if (hqTab === 'calendar' && ui.calView === 'month') {
     h = calSwitch() + calMonthHtml();
   } else if (hqTab === 'calendar') {
@@ -908,8 +909,8 @@ $('hqBody').addEventListener('click', async e => {
   else if (b.dataset.drop) { if (!(await pwConfirm('Partnervertrag beenden?', 'Der Partner zahlt dann nichts mehr. Das Vertrauen des Vorstands sinkt etwas.', 'Beenden'))) return; err = dropPartner(season, Number(b.dataset.drop)); }
   else if (b.dataset.concept) { const c = CONCEPTS[b.dataset.concept]; if (!(await pwConfirm(c.name, `${c.hint}. Das Konzept gilt für die ganze Saison und kostet ${money(CONCEPT_COST)}.`, 'Festlegen'))) return; err = chooseConcept(season, b.dataset.concept); }
   else if (b.dataset.dev) {
-    const z = DEV_SIZE[b.dataset.size], d = DEV[b.dataset.dev];
-    if (!(await pwConfirm(`${d.name}: ${z.name}`, `Kosten ${money(z.cost)} (Budgetobergrenze) · Dauer ${projectWeeks(m, b.dataset.size)} Wochen (fertig am ${fmtDate(addDays(season.date, projectWeeks(m, b.dataset.size) * 7))}) · Ertrag ca. +${(z.gain * devFactor(m, b.dataset.dev)).toFixed(1).replace('.', ',')}. Jetzt starten?`, 'Starten'))) return;
+    const z = DEV_SIZE[b.dataset.size], d = b.dataset.dev === 'next' ? NEXT_DEV : DEV[b.dataset.dev];
+    if (!(await pwConfirm(`${d.name}: ${z.name}`, `Kosten ${money(z.cost)} (Budgetobergrenze) · Dauer ${projectWeeks(m, b.dataset.size)} Wochen (fertig am ${fmtDate(addDays(season.date, projectWeeks(m, b.dataset.size) * 7))}) · Ertrag ca. +${(z.gain * devFactor(m, b.dataset.dev === 'next' ? 'aero' : b.dataset.dev) * (b.dataset.dev === 'next' ? 1.2 : 1)).toFixed(1).replace('.', ',')}${b.dataset.dev === 'next' ? ' (wirkt erst in der nächsten Saison)' : ''}. Jetzt starten?`, 'Starten'))) return;
     err = startProject(season, b.dataset.dev, b.dataset.size);
   }
   else if (b.dataset.build) {
@@ -1779,7 +1780,8 @@ function buildSessionWall() {
       <div class="pw-laps" data-f="laps"></div>
       ${fp ? `<div class="pw-label">SETUP <span data-f="lock"></span></div>
       <div class="pw-setup">${Object.entries(SETUP_KEYS).map(([k, d]) => `<div class="pw-srow"><span>${d.name}</span><button data-set="${k}" data-d="-1">−</button><b data-sv="${k}"></b><button data-set="${k}" data-d="1">+</button><small>${d.lo} ↔ ${d.hi}</small></div>`).join('')}</div>
-      <div class="pw-hint">${wetHint()}</div>
+      <div class="pw-hint">🏎 ${esc(c.driver.last)} ${driverStyleText(c.id)}. ${wetHint()}</div>
+      <div data-f="ssave"></div>
       <div class="pw-label">RÜCKMELDUNG DES FAHRERS</div>
       <div class="pw-notes" data-f="notes"></div>` : ''}
       <div class="pw-label">REIFEN-KONTINGENT</div>
@@ -1914,6 +1916,8 @@ function renderSessionWall() {
       for (const [k] of Object.entries(SETUP_KEYS)) el.querySelector(`[data-sv="${k}"]`).textContent = wk.setup[car.id][k];
       for (const b of el.querySelectorAll('[data-set]')) b.disabled = wk.setupLocked || !car.inGarage;
       el.querySelector('.pw-setup').classList.toggle('locked', wk.setupLocked || !car.inGarage);
+      const ssig = JSON.stringify(savedSetups(car.id)) + car.inGarage + wk.setupLocked;
+      if (f('ssave').dataset.sig !== ssig) { f('ssave').dataset.sig = ssig; f('ssave').innerHTML = setupSaveHtml(car.id); f('ssave').classList.toggle('pw-sslock', wk.setupLocked || !car.inGarage); }
       const notes = wk.notes[car.id].slice(-4).reverse();
       const nsig = String(wk.notes[car.id].length);
       if (f('notes').dataset.sig !== nsig) {
@@ -1934,6 +1938,12 @@ function renderSessionWall() {
 }
 
 function sessionClick(e, b) {
+  if (b.dataset.ssave || b.dataset.sload) {
+    setupSaveClick(b);
+    for (const y of $('wall').querySelectorAll('[data-f="ssave"]')) y.dataset.sig = '';
+    renderSessionWall();
+    return;
+  }
   const el = e.target.closest('[data-car]');
   if (!el) return;
   const car = race.carById[el.dataset.car];
@@ -2159,6 +2169,7 @@ $('stratGo').addEventListener('click', () => {
 // ---------- Ergebnis ----------
 function showResults() {
   resultShown = true;
+  $('newRaceBtn').disabled = false;
   const nk = nextKind(wk);
   $('newRaceBtn').textContent = nk ? `Weiter: ${SESSION_NAME[nk]}` : wk.season ? 'Weiter' : 'Zur Startseite';
   $('endWkBtn').classList.toggle('hidden', !nk);
@@ -2254,13 +2265,48 @@ $('protestBody').addEventListener('click', e => {
   }
 });
 $('protestClose').addEventListener('click', () => { if (protestPlayer) { protestPlayer.destroy(); protestPlayer = null; } $('protestView').classList.add('hidden'); });
+// Entwicklung: Auto für die nächste Saison (ab Saisonmitte, nach dem neuen Reglement)
+function nextCarHtml(m) {
+  let h = `<div class="pw-label">NEUES AUTO ${season.year + 1}</div>`;
+  if (season.regNote) h += `<div class="pw-mcard"><b>Reglement-Wechsel zur Saison ${season.year}</b><small>Euer Auto liegt durch die Entwicklung der Vorsaison ${season.regNote.mine >= 0 ? '+' : ''}${fmt(season.regNote.mine)} über dem Durchschnitt des Feldes (Pace-Punkte).</small></div>`;
+  if (!m.regs) return h + `<div class="pw-hint">Die Rennleitung legt das Reglement für ${season.year + 1} nach Rennen ${REG_ROUND} fest. Ab dann kannst du das neue Auto entwickeln – je besser, desto stärker startet ihr in die nächste Saison.</div>`;
+  const r = REGS.find(x => x.id === m.regs.type);
+  return h + `<div class="pw-mcard"><b>${r.name}</b><small>${r.text}. ${NEXT_DEV.hint}.</small>
+    ${hqBar('ENTWICKELT', m.nextDev || 0, 8, '#38bdf8', fmt(m.nextDev || 0))}
+    <div class="pw-hqbtns">${Object.entries(DEV_SIZE).map(([s, z]) => `<button data-dev="next" data-size="${s}">${z.name}<small>${money(z.cost)} · ${projectWeeks(m, s)} Wochen</small></button>`).join('')}</div>
+    <small>Die anderen Teams entwickeln ihr neues Auto ebenfalls. Was du jetzt hier investierst, fehlt bei den Upgrades fürs aktuelle Auto.</small></div>`;
+}
+// Gespeicherte Setups (Bibliothek je Strecke und Fahrer, bleibt über Saisons erhalten)
+function savedSetups(id) { const lib = loadSetupLib(); return (lib[race.track.def.id] || {})[id] || {}; }
+function setupSaveHtml(id) {
+  const sv = savedSetups(id), when = x => (x && x.year ? ` (${x.year})` : '');
+  return `<div class="pw-label">GESPEICHERTE SETUPS – ${esc(race.track.def.name || race.track.def.id).toUpperCase()}</div>
+    <div class="pw-ssave">${['dry', 'wet'].map(k => `<div><b>${k === 'dry' ? '☀️ Trocken' : '🌧 Regen'}</b><small>${sv[k] ? setupCode(sv[k].s) + when(sv[k]) : 'noch keins'}</small>
+      <span><button data-ssave="${k}" data-scar="${id}">Speichern</button><button data-sload="${k}" data-scar="${id}" ${sv[k] ? '' : 'disabled'}>Laden</button></span></div>`).join('')}</div>`;
+}
+function setupSaveClick(b) {
+  const id = b.dataset.scar, k = b.dataset.ssave || b.dataset.sload;
+  const lib = loadSetupLib(), tid = race.track.def.id;
+  if (b.dataset.ssave) {
+    lib[tid] = lib[tid] || {};
+    lib[tid][id] = { ...(lib[tid][id] || {}), [k]: { s: { ...wk.setup[id] }, year: season && wk.season ? season.year : null } };
+    saveSetupLib(lib);
+    toast(`💾 ${k === 'dry' ? 'Trocken' : 'Regen'}-Setup für ${id} gespeichert`, 2000);
+  } else {
+    const car = race.carById[id], x = ((lib[tid] || {})[id] || {})[k];
+    if (!x || wk.setupLocked || (car && !car.inGarage && race.phase !== 'finished')) { toast('Laden nur in der Garage und vor dem Parc fermé', 2200); return; }
+    wk.setup[id] = { ...x.s };
+    applyWeekend(race, wk);
+    toast(`📂 ${k === 'dry' ? 'Trocken' : 'Regen'}-Setup für ${id} geladen`, 2000);
+  }
+}
 // Setup kurz: FF6 HF6 BF5 …
 const setupCode = st => Object.entries(SETUP_KEYS).map(([k, d]) => `${d.short}${st[k] ?? st.wing ?? '–'}`).join(' ');
 // Ingenieure (Saison): Einschätzung trocken und nass, genauer mit besseren Ingenieuren
 function engEst(id) {
   if (!(wk.season && season)) return '';
   const s = wk.setup[id], seed = `${wk.seed}${JSON.stringify(s)}`;
-  const dry = engineerEstimate(season, setupScore(race.track, s, 0), seed), wet = engineerEstimate(season, setupScore(race.track, s, 1), seed + 'w');
+  const dry = engineerEstimate(season, setupScore(race.track, s, 0, id), seed), wet = engineerEstimate(season, setupScore(race.track, s, 1, id), seed + 'w');
   return dry === null ? '' : ` · Ingenieure: trocken ~${dry} % · nass ~${wet} %`;
 }
 const wetHint = () => `🌧 Regen-Abstimmung (Erfahrungswerte der Ingenieure): ${Object.entries(WET_SHIFT).map(([k, v]) => `${SETUP_KEYS[k].name} ${v > 0 ? '+' : '−'}${Math.abs(v)}`).join(', ')} – ungefähr. Ein Regen-Setup ist im Nassen schnell, im Trockenen langsam.`;
@@ -2271,11 +2317,15 @@ function debriefHtml() {
     const est = engEst(c.id);
     return `<div class="pw-mcard pw-debrief" data-dcar="${c.id}"><b>${esc(c.driver.first)} ${esc(c.driver.last)}</b>${est ? `<small>${est.replace(' · ', '')}</small>` : ''}
       <div class="pw-notes">${notes.length ? notes.map((n, i) => `<div><i>Stint ${i + 1}</i> „${esc(n.text)}“<small>${setupCode(n.setup)} · ${n.n ? `${n.n} Rd, beste ${formatLap(n.best)}` : 'keine gezeitete Runde'}</small></div>`).join('') : '<div>Keine Ausfahrt – keine Rückmeldung.</div>'}</div>
+      <small>🏎 ${esc(c.driver.last)} ${driverStyleText(c.id)}</small>
       <div class="pw-setup">${Object.entries(SETUP_KEYS).map(([k, d]) => `<div class="pw-srow"><span>${d.name}</span><button data-dset="${k}" data-d="-1">−</button><b>${wk.setup[c.id][k]}</b><button data-dset="${k}" data-d="1">+</button><small>${d.lo} ↔ ${d.hi}</small></div>`).join('')}</div>
+      ${setupSaveHtml(c.id)}
     </div>`;
   }).join('') + `<div class="pw-hint">${wetHint()}</div><div class="pw-hint">Ab dem Qualifying gilt Parc fermé – danach lässt sich das Setup nicht mehr ändern. Die Wettervorhersage für Qualifying und Rennen siehst du über das Wettersymbol oben.</div>`;
 }
 $('resultBody').addEventListener('click', e => {
+  const sb = e.target.closest('[data-ssave], [data-sload]');
+  if (sb) { setupSaveClick(sb); if (race.kind === 'fp' && !race.debriefDone) showSessionResults(); return; }
   const b = e.target.closest('[data-dset]');
   if (!b || !race || race.kind !== 'fp' || wk.setupLocked) return;
   const car = b.closest('[data-dcar]').dataset.dcar, k = b.dataset.dset, d = SETUP_KEYS[k];
@@ -2297,13 +2347,64 @@ function showSessionResults() {
   $('resultTitle').textContent = `⏱ ${race.info.name} · ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
   // Training: noch nicht ausgewertete letzte Ausfahrt nachholen (Session endete, bevor das Auto in der Garage war)
   if (race.kind === 'fp') for (const c of mine) if ((c.runLaps && c.runLaps.length) || c.redAbort) onGarage(c);
-  $('resultBody').innerHTML = `${race.kind === 'fp' ? debriefHtml() : ''}<div class="pw-sum"><b>${esc(TEAM_BY_ID[race.playerTeam].name)}</b>: ${mine.map(c => `${c.id} P${st.indexOf(c) + 1}`).join(' · ')}${race.kind !== 'fp' ? ' – das ist die Startaufstellung.' : ''}</div>
+  // Ablauf nach dem Training: 1. Debriefing, 2. Ergebnis, 3. Reifenabgabe (jeweils mit „Weiter“)
+  const nk = nextKind(wk);
+  const nextLabel = nk ? `Weiter: ${SESSION_NAME[nk]}` : 'Weiter';
+  if (race.kind === 'fp' && !race.debriefDone) {
+    $('resultTitle').textContent = `🔧 Debriefing · ${race.track.def.grandPrix.replace('Großer Preis ', 'GP ')}`;
+    $('resultBody').innerHTML = debriefHtml();
+    $('newRaceBtn').textContent = 'Weiter: Ergebnis';
+    $('resultScreen').classList.remove('hidden');
+    return;
+  }
+  if (race.resultSeen && returnCount(wk, race.kind) && !race.returnDone) { showTyreReturn(); return; }
+  $('newRaceBtn').textContent = returnCount(wk, race.kind) && !race.returnDone ? 'Weiter: Reifenabgabe' : nextLabel;
+  $('resultBody').innerHTML = `<div class="pw-sum"><b>${esc(TEAM_BY_ID[race.playerTeam].name)}</b>: ${mine.map(c => `${c.id} P${st.indexOf(c) + 1}`).join(' · ')}${race.kind !== 'fp' ? ' – das ist die Startaufstellung.' : ''}</div>
     <table class="pw-res"><tbody>${rows}</tbody></table>`;
   $('resultScreen').classList.remove('hidden');
 }
+// Reifenabgabe: Teamchef wählt die Sätze (Vorschlag der Ingenieure vorausgewählt)
+let returnSel = {};
+function showTyreReturn() {
+  const n = returnCount(wk, race.kind);
+  const cars = playerCars(race).filter(c => wk.sets[c.id]);
+  for (const c of cars) if (!returnSel[c.id]) returnSel[c.id] = suggestReturn(wk, c.id);
+  $('resultTitle').textContent = '🛞 Reifenabgabe';
+  $('resultBody').innerHTML = `<div class="pw-hint">Nach dem Training müssen je Fahrer <b>${n} Sätze</b> zurückgegeben werden (Reglement). Vorausgewählt ist der Vorschlag der Ingenieure – tippe Sätze an, um die Auswahl zu ändern.</div>`
+    + cars.map(c => {
+      const list = wk.sets[c.id].slice().sort((a, b) => 'SMHIW'.indexOf(a.c) - 'SMHIW'.indexOf(b.c) || a.laps - b.laps);
+      const k = returnSel[c.id].length;
+      return `<div class="pw-mcard"><b>${esc(c.driver.first)} ${esc(c.driver.last)}</b> <small class="${k === n ? 'pos' : 'neg'}">${k}/${n} ausgewählt</small>
+        <div class="pw-sets pw-retsets">${list.map(st => `<button data-ret="${st.id}" data-rcar="${c.id}" class="${returnSel[c.id].includes(st.id) ? 'on' : ''}"><i class="pw-tyre ${st.c}">${st.c}</i>${st.laps < 0.05 ? 'neu' : `${Math.round(st.lapCount ?? st.laps)} Rd`}</button>`).join('')}</div>
+        <small>Bleiben: ${'SMHIW'.split('').map(x => `${x} ${list.filter(st => st.c === x && !returnSel[c.id].includes(st.id)).length}`).join(' · ')}</small></div>`;
+    }).join('');
+  const ok = cars.every(c => returnSel[c.id].length === n);
+  const nk = nextKind(wk);
+  $('newRaceBtn').textContent = ok ? `Abgeben · ${nk ? `weiter: ${SESSION_NAME[nk]}` : 'weiter'}` : `Je Fahrer ${n} Sätze wählen`;
+  $('newRaceBtn').disabled = !ok;
+  $('resultScreen').classList.remove('hidden');
+}
+$('resultBody').addEventListener('click', e => {
+  const b = e.target.closest('[data-ret]');
+  if (!b) return;
+  const id = Number(b.dataset.ret), sel = returnSel[b.dataset.rcar];
+  if (sel.includes(id)) sel.splice(sel.indexOf(id), 1); else sel.push(id);
+  showTyreReturn();
+});
 $('newRaceBtn').addEventListener('click', () => {
   // Nur einmal pro beendeter Session (Doppeltipp / Fenster im Hintergrund)
   if (!race || race.phase !== 'finished' || race.wkDone) return;
+  // Schritte nach der Session: Debriefing → Ergebnis → Reifenabgabe
+  if (race.isSession && race.kind === 'fp' && !race.debriefDone) { race.debriefDone = true; showSessionResults(); return; }
+  if (race.isSession && returnCount(wk, race.kind) && !race.returnDone) {
+    if (!race.resultSeen) { race.resultSeen = true; returnSel = {}; showTyreReturn(); return; }
+    const n = returnCount(wk, race.kind);
+    if (!playerCars(race).filter(c => wk.sets[c.id]).every(c => returnSel[c.id] && returnSel[c.id].length === n)) return;
+    wk.manualReturn = {};
+    for (const c of playerCars(race)) if (wk.sets[c.id]) { returnChosen(wk, c.id, returnSel[c.id]); wk.manualReturn[c.id] = true; }
+    race.returnDone = true;
+    $('newRaceBtn').disabled = false;
+  }
   race.wkDone = true;
   $('resultScreen').classList.add('hidden');
   // Saison: Schäden aller Sessions sammeln, Stimmung der Fahrer nach dem Rennen merken

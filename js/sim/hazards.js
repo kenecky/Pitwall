@@ -78,7 +78,7 @@ export function rollLapIncidents(race, car) {
   const w = race.weather.wetness;
   if (w > 0.05) {
     const best = bestCompound(w, (race.laps - car.lap) * (race.wear || 1));
-    const mismatch = Math.min(3, Math.max(0, (wetLoss(car.compound, w) - wetLoss(best, w)) / 4));
+    const mismatch = Math.min(3, Math.max(0, (wetLoss(car.compound, w) - wetLoss(best, w)) / 14));
     spinP *= 1 + 5 * w + 4 * mismatch;
     spinP *= 1.5 - car.driver.wet / 200;
   }
